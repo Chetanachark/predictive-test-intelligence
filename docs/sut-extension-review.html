@@ -1,0 +1,736 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SUT feature extension — complete code and verification</title><style>body{font:16px/1.65 system-ui,sans-serif;max-width:1100px;margin:40px auto;padding:0 24px;color:#1c2940}h1,h2,h3{line-height:1.3}section{border-top:1px solid #ddd;margin-top:36px;padding-top:20px}pre{background:#f1f4f9;padding:20px;overflow:auto;border-radius:8px;font:13px/1.6 ui-monospace,monospace}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccd3df;padding:10px;text-align:left;vertical-align:top}a{color:#2856c6}li{margin:8px 0}.note{background:#edf2fc;padding:16px;border-radius:8px}</style><body>
+<h1>SUT feature extension</h1><p>Predictive Test Intelligence and Adaptive Self-Healing Framework for Playwright-Based Web Test Automation Using Machine Learning</p>
+<p class="note">Implemented: local search, sorting, inventory, coupons, and order history. No dependencies added. No authentication changes, backend communication, database, or browser storage. The existing source structure is retained; a small pure state module makes atomic checkout logic testable.</p>
+<h2>Verification status</h2><ul><li>21 Node state-logic tests passed.</li><li>Vite production build passed.</li><li>Lint passed without warnings.</li><li>Server rendering checks passed for Products, Cart, Checkout, OrderSuccess, and Orders. These check render output, not interactive behavior.</li><li>Browser-based Playwright tests have not been implemented or executed in this sprint. The 55 scenarios below are specifications for the automation sprint.</li><li>Source scan found no fetch, axios, API invocation, localStorage, or sessionStorage in frontend/src.</li></ul>
+<h2>Run and verify</h2><pre>cd /Users/chetanachark/predictive-test-app/frontend
+npm test
+npm run build
+npm run lint
+npm run dev</pre><p>Use a fresh page for each independent scenario, enter the existing demo, and do not start the backend. Reload resets state, so stock depletion and multiple-order scenarios must run within one page session. Demo entry accepts any valid-format email and nonempty password; it is not authentication. Existing external font styling is unchanged.</p>
+<h2>Flow and scenario counts</h2><p>10 primary user flows: demo entry, catalog browsing, cart management, checkout, order confirmation, product search, product sorting, inventory-bound purchasing, coupon application, and order history.</p><p>40 newly specified scenarios + 15 baseline scenarios = 55 documented Playwright scenarios enabled. These are not 55 executed tests. The 21 executed tests are Node state-logic tests, separate from this scenario count.</p>
+
+<section><h2>Product search</h2><h3>Goal</h3><p>Real-time, case-insensitive name filtering; whitespace is trimmed. Clearing the search restores the catalog. Existing cards and styling are retained.</p><h3>Files Modified</h3><ul>
+<li><a href="#source-frontend/src/pages/Products.jsx">frontend/src/pages/Products.jsx</a></li>
+</ul><h3>Complete Code</h3><p>The complete contents of every affected file are included in the source section below. Shared files are shown once.</p><h3>Verification Steps</h3><ol>
+<li>Search Laptop: only Laptop is displayed.</li>
+<li>Search phone: only Smartphone is displayed.</li>
+<li>Search an unknown name: No products found appears.</li>
+<li>Clear the input: all four products reappear.</li>
+</ol><h3>New Playwright Test Scenarios Created</h3><p>Scenario specifications for later automation:</p><table><tr><th>ID</th><th>Scenario</th><th>Expected result</th></tr>
+<tr><td>S01</td><td>Exact name</td><td>Search Laptop; exactly one card named Laptop is shown.</td></tr>
+<tr><td>S02</td><td>Partial name</td><td>Search phone; Smartphone is shown.</td></tr>
+<tr><td>S03</td><td>Case normalization</td><td>Search LAPTOP; Laptop is shown.</td></tr>
+<tr><td>S04</td><td>Whitespace normalization</td><td>Search &quot; Laptop &quot;; Laptop is shown.</td></tr>
+<tr><td>S05</td><td>No results</td><td>Search Camera; no product cards and No products found are shown.</td></tr>
+<tr><td>S06</td><td>Empty search</td><td>Clear the query; all four cards return.</td></tr>
+<tr><td>S07</td><td>Whitespace-only search</td><td>Enter spaces; all four cards remain.</td></tr>
+<tr><td>S08</td><td>Dynamic filtering</td><td>Change Laptop to Monitor without navigation; the displayed card changes immediately.</td></tr>
+</table></section>
+<section><h2>Product sorting</h2><h3>Goal</h3><p>Four dynamic sort options operate on a filtered copy of the catalog, preserving source inventory order.</p><h3>Files Modified</h3><ul>
+<li><a href="#source-frontend/src/pages/Products.jsx">frontend/src/pages/Products.jsx</a></li>
+<li><a href="#source-frontend/src/index.css">frontend/src/index.css</a></li>
+</ul><h3>Complete Code</h3><p>The complete contents of every affected file are included in the source section below. Shared files are shown once.</p><h3>Verification Steps</h3><ol>
+<li>Name A-Z: Headphones, Laptop, Monitor, Smartphone.</li>
+<li>Name Z-A: Smartphone, Monitor, Laptop, Headphones.</li>
+<li>Price Low-High: Headphones, Monitor, Smartphone, Laptop.</li>
+<li>Price High-Low: Laptop, Smartphone, Monitor, Headphones.</li>
+</ol><h3>New Playwright Test Scenarios Created</h3><p>Scenario specifications for later automation:</p><table><tr><th>ID</th><th>Scenario</th><th>Expected result</th></tr>
+<tr><td>T01</td><td>Name ascending</td><td>Name A-Z renders Headphones, Laptop, Monitor, Smartphone.</td></tr>
+<tr><td>T02</td><td>Name descending</td><td>Name Z-A renders Smartphone, Monitor, Laptop, Headphones.</td></tr>
+<tr><td>T03</td><td>Price ascending</td><td>Price Low-High renders Headphones, Monitor, Smartphone, Laptop.</td></tr>
+<tr><td>T04</td><td>Price descending</td><td>Price High-Low renders Laptop, Smartphone, Monitor, Headphones.</td></tr>
+<tr><td>T05</td><td>Dynamic sort change</td><td>Switch Low-High to High-Low; verify reversed price order without reload.</td></tr>
+<tr><td>T06</td><td>Search plus sort</td><td>Search o: Headphones, Monitor, Smartphone; descending price gives Smartphone, Monitor, Headphones. Clear search and preserve selected sort.</td></tr>
+</table></section>
+<section><h2>Inventory management</h2><h3>Goal</h3><p>Laptop starts at 5, Smartphone at 10, Monitor at 2, and Headphones at 0. Cart additions do not reserve or decrement stock. Cart quantities cannot exceed available stock or 99. Checkout decrements stock and clears the cart in one state update.</p><h3>Files Modified</h3><ul>
+<li><a href="#source-frontend/src/data/products.js">frontend/src/data/products.js</a></li>
+<li><a href="#source-frontend/src/context/shopState.js">frontend/src/context/shopState.js</a></li>
+<li><a href="#source-frontend/src/context/StoreProvider.jsx">frontend/src/context/StoreProvider.jsx</a></li>
+<li><a href="#source-frontend/src/pages/Products.jsx">frontend/src/pages/Products.jsx</a></li>
+<li><a href="#source-frontend/src/components/ProductCard.jsx">frontend/src/components/ProductCard.jsx</a></li>
+<li><a href="#source-frontend/src/components/CartItem.jsx">frontend/src/components/CartItem.jsx</a></li>
+</ul><h3>Complete Code</h3><p>The complete contents of every affected file are included in the source section below. Shared files are shown once.</p><h3>Verification Steps</h3><ol>
+<li>Headphones displays Out of Stock and its add button is disabled.</li>
+<li>Add Monitor twice; further additions and quantity increases are disabled.</li>
+<li>Remove one Monitor; another addition becomes possible.</li>
+<li>Order two Monitors; return to Products and confirm Monitor is Out of Stock.</li>
+</ol><h3>New Playwright Test Scenarios Created</h3><p>Scenario specifications for later automation:</p><table><tr><th>ID</th><th>Scenario</th><th>Expected result</th></tr>
+<tr><td>I01</td><td>Initial inventory</td><td>Verify Laptop 5, Smartphone 10, Monitor 2, and Headphones Out of Stock.</td></tr>
+<tr><td>I02</td><td>Disabled unavailable product</td><td>Headphones Add to cart is disabled; the cart remains unchanged.</td></tr>
+<tr><td>I03</td><td>Cart stock boundary</td><td>Add Monitor twice; quantity is 2 and the catalog add button is disabled.</td></tr>
+<tr><td>I04</td><td>Quantity increment boundary</td><td>In Cart, Monitor quantity 2 disables the increase button.</td></tr>
+<tr><td>I05</td><td>Manual stock overflow</td><td>Attempt Monitor quantity 3; value and total remain at the last valid quantity.</td></tr>
+<tr><td>I06</td><td>Minimum boundary</td><td>At quantity 1, decrease is disabled; zero, negative, and fractional quantities are rejected.</td></tr>
+<tr><td>I07</td><td>Restore cart capacity</td><td>Remove Monitor or reduce quantity to 1; catalog add becomes enabled and stock remains 2.</td></tr>
+<tr><td>I08</td><td>Partial purchase</td><td>Buy one Monitor; inventory becomes 1 and cart is empty.</td></tr>
+<tr><td>I09</td><td>Exhaust inventory</td><td>Buy the remaining Monitor; stock becomes 0 and add is disabled.</td></tr>
+<tr><td>I10</td><td>Independent stock and demo reset</td><td>Buying Monitor leaves Laptop stock unchanged; refresh, reenter demo, and verify seed stock is restored.</td></tr>
+</table></section>
+<section><h2>Coupon codes</h2><h3>Goal</h3><p>SAVE10 applies 10% and WELCOME20 applies 20%. Codes are trimmed and case-insensitive. Only one coupon applies. Editing the input removes the previous discount immediately; a nonempty input must be applied or cleared before checkout. Empty input means no discount.</p><h3>Files Modified</h3><ul>
+<li><a href="#source-frontend/src/context/shopState.js">frontend/src/context/shopState.js</a></li>
+<li><a href="#source-frontend/src/context/StoreProvider.jsx">frontend/src/context/StoreProvider.jsx</a></li>
+<li><a href="#source-frontend/src/pages/Checkout.jsx">frontend/src/pages/Checkout.jsx</a></li>
+<li><a href="#source-frontend/src/pages/OrderSuccess.jsx">frontend/src/pages/OrderSuccess.jsx</a></li>
+</ul><h3>Complete Code</h3><p>The complete contents of every affected file are included in the source section below. Shared files are shown once.</p><h3>Verification Steps</h3><ol>
+<li>With one Monitor, apply SAVE10: subtotal INR 15,000, discount INR 1,500, total INR 13,500.</li>
+<li>Replace with WELCOME20: discount INR 3,000 and total INR 12,000.</li>
+<li>Apply INVALID: validation appears and discount becomes zero.</li>
+<li>Clear the coupon and place an order: full price is used.</li>
+<li>Check that confirmation and history preserve the applied coupon and totals.</li>
+</ol><h3>New Playwright Test Scenarios Created</h3><p>Scenario specifications for later automation:</p><table><tr><th>ID</th><th>Scenario</th><th>Expected result</th></tr>
+<tr><td>C01</td><td>SAVE10</td><td>One Monitor yields subtotal 15000, discount 1500, total 13500.</td></tr>
+<tr><td>C02</td><td>WELCOME20</td><td>One Monitor yields subtotal 15000, discount 3000, total 12000.</td></tr>
+<tr><td>C03</td><td>Invalid code</td><td>Apply INVALID; a validation message appears and discount is zero.</td></tr>
+<tr><td>C04</td><td>Empty code</td><td>Apply an empty code; No coupon applied appears and full price remains.</td></tr>
+<tr><td>C05</td><td>Normalized code</td><td>Apply &quot; save10 &quot;; SAVE10 is accepted.</td></tr>
+<tr><td>C06</td><td>Replace coupon without stacking</td><td>Apply SAVE10 then WELCOME20; final discount is 20%, not 30%.</td></tr>
+<tr><td>C07</td><td>Edit applied code</td><td>Edit SAVE10 to INVALID; previous discount clears immediately, and placement is blocked until input is applied or cleared.</td></tr>
+<tr><td>C08</td><td>Repeated apply</td><td>Apply SAVE10 twice; total remains 13500 for one Monitor.</td></tr>
+<tr><td>C09</td><td>Snapshot consistency</td><td>Place a discounted order; confirmation and history show the same coupon, subtotal, discount, and total.</td></tr>
+</table></section>
+<section><h2>Order history</h2><h3>Goal</h3><p>/orders shows newest orders first, with number, ISO-backed local date, item quantities, subtotal, discount, and final total. Snapshots and inventory live only in React state. The existing demo-entry behavior is unchanged; leaving the session clears demo state.</p><h3>Files Modified</h3><ul>
+<li><a href="#source-frontend/src/pages/Orders.jsx">frontend/src/pages/Orders.jsx</a></li>
+<li><a href="#source-frontend/src/App.jsx">frontend/src/App.jsx</a></li>
+<li><a href="#source-frontend/src/components/Navbar.jsx">frontend/src/components/Navbar.jsx</a></li>
+<li><a href="#source-frontend/src/context/StoreProvider.jsx">frontend/src/context/StoreProvider.jsx</a></li>
+<li><a href="#source-frontend/src/context/shopState.js">frontend/src/context/shopState.js</a></li>
+<li><a href="#source-frontend/src/pages/OrderSuccess.jsx">frontend/src/pages/OrderSuccess.jsx</a></li>
+<li><a href="#source-frontend/src/index.css">frontend/src/index.css</a></li>
+</ul><h3>Complete Code</h3><p>The complete contents of every affected file are included in the source section below. Shared files are shown once.</p><h3>Verification Steps</h3><ol>
+<li>Before purchasing, open Orders and verify No orders yet.</li>
+<li>Place one order; use View order history and verify its number, date, items, and total.</li>
+<li>Place another order; verify two distinct numbers and newest-first ordering.</li>
+<li>Use Continue Shopping and confirm cart starts empty.</li>
+<li>Refresh and reenter the demo; history is empty.</li>
+</ol><h3>New Playwright Test Scenarios Created</h3><p>Scenario specifications for later automation:</p><table><tr><th>ID</th><th>Scenario</th><th>Expected result</th></tr>
+<tr><td>H01</td><td>Empty history</td><td>Open Orders before checkout; No orders yet is shown.</td></tr>
+<tr><td>H02</td><td>Single order snapshot</td><td>Place an order; history shows its number, valid date, item quantity, and total.</td></tr>
+<tr><td>H03</td><td>Multiple orders</td><td>Place two orders; both appear with distinct numbers, newest first.</td></tr>
+<tr><td>H04</td><td>Snapshot isolation</td><td>After a second purchase and stock change, the first order retains its original items and totals.</td></tr>
+<tr><td>H05</td><td>Continue shopping</td><td>Continue Shopping returns to Products; completed checkout has cleared the cart.</td></tr>
+<tr><td>H06</td><td>Navigation consistency</td><td>Navigate via Orders in the navbar and View order history from confirmation; both show the same history.</td></tr>
+<tr><td>H07</td><td>No persistence</td><td>Refresh, reenter demo, and verify history is empty; leaving and reentering the demo also resets history.</td></tr>
+</table></section>
+<section><h2>Baseline Playwright scenarios</h2><table><tr><th>ID</th><th>Scenario</th><th>Expected result</th></tr>
+<tr><td>B01</td><td>Demo entry</td><td>A valid-format email and nonempty demo password enter Products without credential verification.</td></tr>
+<tr><td>B02</td><td>Catalog</td><td>All four local products render with names and INR prices without a backend.</td></tr>
+<tr><td>B03</td><td>Add item</td><td>Adding Laptop produces one cart line with quantity 1.</td></tr>
+<tr><td>B04</td><td>Merge duplicates</td><td>Adding Laptop again increases its existing line instead of creating a duplicate.</td></tr>
+<tr><td>B05</td><td>Cart totals</td><td>Laptop plus Monitor totals INR 65000 before discounts.</td></tr>
+<tr><td>B06</td><td>Increase quantity</td><td>Increase an in-stock cart quantity; line and cart totals update.</td></tr>
+<tr><td>B07</td><td>Decrease quantity</td><td>Decrease quantity above 1; line and cart totals update.</td></tr>
+<tr><td>B08</td><td>Remove item</td><td>Remove a line; its total is excluded from the cart.</td></tr>
+<tr><td>B09</td><td>Empty cart</td><td>Removing the last line shows the empty state and Browse products.</td></tr>
+<tr><td>B10</td><td>Required checkout fields</td><td>Blank name, email, or address blocks order placement.</td></tr>
+<tr><td>B11</td><td>Email validation</td><td>An invalid email blocks order placement.</td></tr>
+<tr><td>B12</td><td>Whitespace validation</td><td>Whitespace-only name/address shows a validation error and preserves the cart.</td></tr>
+<tr><td>B13</td><td>Complete checkout</td><td>Valid checkout shows confirmation and clears cart.</td></tr>
+<tr><td>B14</td><td>Duplicate-submit protection</td><td>Rapidly click Place order twice; only one order appears in history.</td></tr>
+<tr><td>B15</td><td>Empty-cart checkout</td><td>After completing an order, return to Checkout; it shows an empty cart and cannot create another order.</td></tr>
+</table></section><section><h2>Failure data available to future telemetry</h2><ul>
+<li>Search result mismatches, missing results, and failed clear/reset behavior.</li>
+<li>Incorrect sort order and search/sort interaction regressions.</li>
+<li>Enabled/disabled control mismatches, quantity-boundary violations, and inventory/cart inconsistency.</li>
+<li>Coupon validation failures, stale discounts, discount stacking, and incorrect arithmetic.</li>
+<li>Missing confirmation, duplicate orders, stock not decremented, cart not cleared, and inconsistent order snapshots.</li>
+<li>History ordering, date-format, missing-field, navigation, and reset-state regressions.</li>
+<li>Once the Playwright reporter/telemetry sprint is implemented: test duration, status, retries, assertion errors, locator timeouts, screenshots, and traces can be collected for these scenarios.</li>
+</ul><p>An expected validation rejection is a passing negative test. It becomes a test failure only when actual behavior disagrees with the assertion. The SUT itself does not yet emit telemetry, label ML data, or simulate locator changes. Stable accessible names are retained for role-based locators.</p></section>
+<section><h2>Complete changed and added files</h2><p>Application: 12 files. Validation: state test file and package test command. No new package dependencies.</p>
+<h3 id="source-frontend/src/data/products.js">frontend/src/data/products.js</h3><pre><code>const products = [
+  { id: 1, name: &#x27;Laptop&#x27;, price: 50000, stock: 5 },
+  { id: 2, name: &#x27;Smartphone&#x27;, price: 25000, stock: 10 },
+  { id: 3, name: &#x27;Headphones&#x27;, price: 3000, stock: 0 },
+  { id: 4, name: &#x27;Monitor&#x27;, price: 15000, stock: 2 },
+]
+
+export default products
+</code></pre>
+<h3 id="source-frontend/src/context/shopState.js">frontend/src/context/shopState.js</h3><pre><code>import initialProducts from &#x27;../data/products.js&#x27;
+
+export function createShopState() {
+  return { products: initialProducts.map(product =&gt; ({ ...product })), cart: [], orders: [] }
+}
+
+export function couponDetails(value) {
+  const code = value.trim().toUpperCase()
+  if (!code) return { code: &#x27;&#x27;, rate: 0 }
+  const rates = { SAVE10: 0.1, WELCOME20: 0.2 }
+  if (!Object.hasOwn(rates, code)) throw new Error(&#x27;Invalid coupon code.&#x27;)
+  return { code, rate: rates[code] }
+}
+
+export function orderTotals(cart, coupon = &#x27;&#x27;) {
+  const { code, rate } = couponDetails(coupon)
+  const subtotal = cart.reduce((sum, item) =&gt; sum + item.price * item.quantity, 0)
+  const discount = Math.round(subtotal * rate * 100) / 100
+  return { subtotal, discount, total: Math.round((subtotal - discount) * 100) / 100, coupon: code }
+}
+
+export function updateCart(state, action) {
+  if (action.type === &#x27;clear&#x27;) return { ...state, cart: [] }
+  if (action.type === &#x27;remove&#x27;) {
+    return { ...state, cart: state.cart.filter(item =&gt; item.id !== action.id) }
+  }
+  const product = state.products.find(item =&gt; item.id === action.id)
+  if (!product) return state
+  const existing = state.cart.find(item =&gt; item.id === action.id)
+  const quantity = action.type === &#x27;add&#x27; ? (existing?.quantity ?? 0) + 1 : action.quantity
+  if (![&#x27;add&#x27;, &#x27;quantity&#x27;].includes(action.type) || !Number.isInteger(quantity) ||
+      quantity &lt; 1 || quantity &gt; Math.min(product.stock, 99)) return state
+  const cart = existing
+    ? state.cart.map(item =&gt; item.id === product.id ? { ...item, quantity } : item)
+    : [...state.cart, { ...product, quantity }]
+  return { ...state, cart }
+}
+
+// Commit stock, cart, and order history together in one React state update.
+export function completeOrder(state, customer, coupon, number, date) {
+  const details = Object.fromEntries([&#x27;name&#x27;, &#x27;email&#x27;, &#x27;address&#x27;].map(key =&gt; [key, String(customer[key] ?? &#x27;&#x27;).trim()]))
+  if (Object.values(details).some(value =&gt; !value)) throw new Error(&#x27;Full name, email, and address are required.&#x27;)
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(details.email)) throw new Error(&#x27;Enter a valid email address.&#x27;)
+  if (!state.cart.length) throw new Error(&#x27;Your cart is empty.&#x27;)
+  const totals = orderTotals(state.cart, coupon)
+  const items = state.cart.map(item =&gt; {
+    const product = state.products.find(product =&gt; product.id === item.id)
+    if (!product || !Number.isInteger(item.quantity) || item.quantity &lt; 1 || item.quantity &gt; Math.min(product.stock, 99)) {
+      throw new Error(&#x27;The requested quantity is no longer in stock.&#x27;)
+    }
+    return { id: product.id, name: product.name, price: product.price, quantity: item.quantity }
+  })
+  const order = { number, date, customer: details, items, ...totals }
+  return {
+    products: state.products.map(product =&gt; ({ ...product,
+      stock: product.stock - (items.find(item =&gt; item.id === product.id)?.quantity ?? 0) })),
+    cart: [],
+    orders: [order, ...state.orders],
+  }
+}
+</code></pre>
+<h3 id="source-frontend/src/context/StoreProvider.jsx">frontend/src/context/StoreProvider.jsx</h3><pre><code>import { useState } from &#x27;react&#x27;
+import { StoreContext } from &#x27;./store.js&#x27;
+import { createShopState, updateCart, completeOrder } from &#x27;./shopState.js&#x27;
+
+export default function StoreProvider({ children }) {
+  const [session, setSession] = useState(null)
+  const [shop, setShop] = useState(createShopState)
+
+  // Existing demo entry behavior; no credential verification or persistence.
+  function login(email) {
+    setSession({ user: { name: &#x27;Demo Student&#x27;, email: email.trim() } })
+    setShop(createShopState())
+  }
+
+  function logout() {
+    setSession(null)
+    setShop(createShopState())
+  }
+
+  function addItem(product) {
+    setShop(current =&gt; updateCart(current, { type: &#x27;add&#x27;, id: product.id }))
+  }
+
+  function setQuantity(id, quantity) {
+    setShop(current =&gt; updateCart(current, { type: &#x27;quantity&#x27;, id, quantity }))
+  }
+
+  function removeItem(id) {
+    setShop(current =&gt; updateCart(current, { type: &#x27;remove&#x27;, id }))
+  }
+
+  function clearCart() {
+    setShop(current =&gt; updateCart(current, { type: &#x27;clear&#x27; }))
+  }
+
+  function placeOrder(customer, coupon) {
+    const number = `ORD-${crypto.randomUUID().toUpperCase()}`
+    const nextShop = completeOrder(shop, customer, coupon, number, new Date().toISOString())
+    setShop(nextShop)
+    return nextShop.orders[0]
+  }
+
+  const total = shop.cart.reduce((sum, item) =&gt; sum + item.price * item.quantity, 0)
+
+  return (
+    &lt;StoreContext.Provider value={{
+      session, checking: false, cart: shop.cart, products: shop.products,
+      orders: shop.orders, order: shop.orders[0] ?? null, total,
+      login, logout, addItem, setQuantity, removeItem, clearCart, placeOrder,
+    }}&gt;
+      {children}
+    &lt;/StoreContext.Provider&gt;
+  )
+}
+</code></pre>
+<h3 id="source-frontend/src/pages/Products.jsx">frontend/src/pages/Products.jsx</h3><pre><code>import { useState } from &#x27;react&#x27;
+import { useStore } from &#x27;../context/store.js&#x27;
+import ProductCard from &#x27;../components/ProductCard.jsx&#x27;
+
+const sorters = {
+  &#x27;name-asc&#x27;: (a, b) =&gt; a.name.localeCompare(b.name),
+  &#x27;name-desc&#x27;: (a, b) =&gt; b.name.localeCompare(a.name),
+  &#x27;price-asc&#x27;: (a, b) =&gt; a.price - b.price || a.name.localeCompare(b.name),
+  &#x27;price-desc&#x27;: (a, b) =&gt; b.price - a.price || a.name.localeCompare(b.name),
+}
+
+export default function Products() {
+  const { products, cart, addItem } = useStore()
+  const [search, setSearch] = useState(&#x27;&#x27;)
+  const [sort, setSort] = useState(&#x27;name-asc&#x27;)
+  const [notice, setNotice] = useState(&#x27;&#x27;)
+  const query = search.trim().toLowerCase()
+  const visibleProducts = products.filter(product =&gt; product.name.toLowerCase().includes(query)).sort(sorters[sort])
+
+  function handleAdd(product) {
+    const quantity = cart.find(item =&gt; item.id === product.id)?.quantity ?? 0
+    if (quantity &gt;= Math.min(product.stock, 99)) {
+      setNotice(`No more ${product.name} can be added.`)
+      return
+    }
+    addItem(product)
+    setNotice(`${product.name} added to cart.`)
+  }
+
+  return (
+    &lt;section&gt;
+      &lt;p className=&quot;eyebrow&quot;&gt;The catalog&lt;/p&gt;
+      &lt;h1&gt;Products&lt;/h1&gt;
+      &lt;p&gt;Choose your tools. Build something great.&lt;/p&gt;
+      &lt;div className=&quot;catalog-controls&quot;&gt;
+        &lt;label&gt;
+          Search products
+          &lt;input type=&quot;search&quot; value={search} placeholder=&quot;Search by product name&quot;
+            onChange={event =&gt; { setSearch(event.target.value); setNotice(&#x27;&#x27;) }} /&gt;
+        &lt;/label&gt;
+        &lt;label&gt;
+          Sort products
+          &lt;select value={sort} onChange={event =&gt; setSort(event.target.value)}&gt;
+            &lt;option value=&quot;name-asc&quot;&gt;Name A-Z&lt;/option&gt;
+            &lt;option value=&quot;name-desc&quot;&gt;Name Z-A&lt;/option&gt;
+            &lt;option value=&quot;price-asc&quot;&gt;Price Low-High&lt;/option&gt;
+            &lt;option value=&quot;price-desc&quot;&gt;Price High-Low&lt;/option&gt;
+          &lt;/select&gt;
+        &lt;/label&gt;
+      &lt;/div&gt;
+      {visibleProducts.length ? (
+        &lt;div className=&quot;grid&quot;&gt;
+          {visibleProducts.map(product =&gt; (
+            &lt;ProductCard key={product.id} product={product} onAdd={handleAdd}
+              quantityInCart={cart.find(item =&gt; item.id === product.id)?.quantity ?? 0} /&gt;
+          ))}
+        &lt;/div&gt;
+      ) : &lt;p role=&quot;status&quot;&gt;No products found.&lt;/p&gt;}
+      &lt;p role=&quot;status&quot;&gt;{notice}&lt;/p&gt;
+    &lt;/section&gt;
+  )
+}
+</code></pre>
+<h3 id="source-frontend/src/components/ProductCard.jsx">frontend/src/components/ProductCard.jsx</h3><pre><code>import { money } from &#x27;../api/client.js&#x27;
+
+export default function ProductCard({ product, onAdd, quantityInCart = 0 }) {
+  const outOfStock = product.stock === 0
+  const atLimit = quantityInCart &gt;= Math.min(product.stock, 99)
+
+  return (
+    &lt;article className=&quot;card&quot; aria-label={product.name}&gt;
+      &lt;span className=&quot;product-icon&quot; aria-hidden=&quot;true&quot;&gt;{product.name.slice(0, 1)}&lt;/span&gt;
+      &lt;h2&gt;{product.name}&lt;/h2&gt;
+      &lt;p className=&quot;price&quot;&gt;{money(product.price)}&lt;/p&gt;
+      &lt;p&gt;{outOfStock ? &#x27;Out of Stock&#x27; : `In stock: ${product.stock}`}&lt;/p&gt;
+      {!outOfStock &amp;&amp; atLimit &amp;&amp; &lt;p&gt;Stock limit reached in cart.&lt;/p&gt;}
+      &lt;button type=&quot;button&quot; disabled={outOfStock || atLimit}
+        onClick={() =&gt; onAdd(product)} aria-label={`Add ${product.name} to cart`}&gt;
+        {outOfStock ? &#x27;Out of Stock&#x27; : &#x27;Add to cart&#x27;}
+      &lt;/button&gt;
+    &lt;/article&gt;
+  )
+}
+</code></pre>
+<h3 id="source-frontend/src/components/CartItem.jsx">frontend/src/components/CartItem.jsx</h3><pre><code>import { money } from &#x27;../api/client.js&#x27;
+
+export default function CartItem({ item, onQuantity, onRemove }) {
+  const maximum = Math.min(item.stock, 99)
+
+  return (
+    &lt;article className=&quot;cart-item&quot; aria-label={item.name}&gt;
+      &lt;div&gt;
+        &lt;h2&gt;{item.name}&lt;/h2&gt;
+        &lt;p&gt;{money(item.price)} each&lt;/p&gt;
+      &lt;/div&gt;
+      &lt;div&gt;
+        &lt;label&gt;
+          Quantity for {item.name}
+          &lt;input type=&quot;number&quot; min=&quot;1&quot; max={maximum} step=&quot;1&quot; value={item.quantity}
+            onChange={event =&gt; onQuantity(item.id, Number(event.target.value))} /&gt;
+        &lt;/label&gt;
+        &lt;button type=&quot;button&quot; className=&quot;secondary&quot; aria-label={`Decrease quantity of ${item.name}`}
+          disabled={item.quantity &lt;= 1} onClick={() =&gt; onQuantity(item.id, item.quantity - 1)}&gt;−&lt;/button&gt;
+        &lt;button type=&quot;button&quot; className=&quot;secondary&quot; aria-label={`Increase quantity of ${item.name}`}
+          disabled={item.quantity &gt;= maximum} onClick={() =&gt; onQuantity(item.id, item.quantity + 1)}&gt;+&lt;/button&gt;
+      &lt;/div&gt;
+      &lt;strong&gt;{money(item.price * item.quantity)}&lt;/strong&gt;
+      &lt;button type=&quot;button&quot; className=&quot;secondary&quot; onClick={() =&gt; onRemove(item.id)}
+        aria-label={`Remove ${item.name}`}&gt;Remove&lt;/button&gt;
+    &lt;/article&gt;
+  )
+}
+</code></pre>
+<h3 id="source-frontend/src/pages/Checkout.jsx">frontend/src/pages/Checkout.jsx</h3><pre><code>import { useRef, useState } from &#x27;react&#x27;
+import { Link, useNavigate } from &#x27;react-router-dom&#x27;
+import { money } from &#x27;../api/client.js&#x27;
+import { couponDetails, orderTotals } from &#x27;../context/shopState.js&#x27;
+import { useStore } from &#x27;../context/store.js&#x27;
+
+export default function Checkout() {
+  const { cart, placeOrder } = useStore()
+  const [couponInput, setCouponInput] = useState(&#x27;&#x27;)
+  const [coupon, setCoupon] = useState(&#x27;&#x27;)
+  const [couponMessage, setCouponMessage] = useState(&#x27;&#x27;)
+  const [couponError, setCouponError] = useState(&#x27;&#x27;)
+  const [error, setError] = useState(&#x27;&#x27;)
+  const [submitting, setSubmitting] = useState(false)
+  const submitted = useRef(false)
+  const navigate = useNavigate()
+  const totals = orderTotals(cart, coupon)
+
+  function applyCoupon() {
+    setCouponError(&#x27;&#x27;)
+    setCouponMessage(&#x27;&#x27;)
+    try {
+      const result = couponDetails(couponInput)
+      setCoupon(result.code)
+      setCouponMessage(result.code ? `${result.code} applied: ${result.rate * 100}% discount.` : &#x27;No coupon applied.&#x27;)
+    } catch (error) {
+      setCoupon(&#x27;&#x27;)
+      setCouponError(error.message)
+    }
+  }
+
+  function submit(event) {
+    event.preventDefault()
+    if (submitted.current || !cart.length) return
+    const data = new FormData(event.currentTarget)
+    const customer = Object.fromEntries([&#x27;name&#x27;, &#x27;email&#x27;, &#x27;address&#x27;].map(key =&gt; [key, data.get(key).trim()]))
+    // Coupon input must be explicitly applied before placing an order.
+    if (couponInput.trim().toUpperCase() !== coupon) {
+      setCouponError(&#x27;Apply or clear the coupon before placing your order.&#x27;)
+      return
+    }
+    setError(&#x27;&#x27;)
+    submitted.current = true
+    setSubmitting(true)
+    try {
+      placeOrder(customer, coupon)
+      navigate(&#x27;/success&#x27;, { replace: true })
+    } catch (error) {
+      submitted.current = false
+      setSubmitting(false)
+      setError(error.message)
+    }
+  }
+
+  return (
+    &lt;section className=&quot;panel narrow&quot;&gt;
+      &lt;h1&gt;Checkout&lt;/h1&gt;
+      {cart.length ? (
+        &lt;&gt;
+          &lt;p&gt;Subtotal: &lt;strong&gt;{money(totals.subtotal)}&lt;/strong&gt;&lt;/p&gt;
+          &lt;p&gt;Discount: &lt;strong&gt;{money(totals.discount)}&lt;/strong&gt;&lt;/p&gt;
+          &lt;p&gt;Total: &lt;strong&gt;{money(totals.total)}&lt;/strong&gt;&lt;/p&gt;
+          &lt;p&gt;Demo orders only. No payment is collected.&lt;/p&gt;
+          &lt;form onSubmit={submit}&gt;
+            &lt;label&gt;Full Name&lt;input name=&quot;name&quot; autoComplete=&quot;name&quot; maxLength=&quot;200&quot; required /&gt;&lt;/label&gt;
+            &lt;label&gt;Email&lt;input name=&quot;email&quot; type=&quot;email&quot; autoComplete=&quot;email&quot; maxLength=&quot;254&quot; required /&gt;&lt;/label&gt;
+            &lt;label&gt;Address&lt;input name=&quot;address&quot; autoComplete=&quot;street-address&quot; maxLength=&quot;500&quot; required /&gt;&lt;/label&gt;
+            &lt;label&gt;
+              Coupon code
+              &lt;input name=&quot;coupon&quot; value={couponInput} maxLength=&quot;30&quot; aria-describedby=&quot;coupon-help&quot;
+                onChange={event =&gt; {
+                  setCouponInput(event.target.value)
+                  setCoupon(&#x27;&#x27;)
+                  setCouponMessage(&#x27;&#x27;)
+                  setCouponError(&#x27;&#x27;)
+                }} /&gt;
+            &lt;/label&gt;
+            &lt;p id=&quot;coupon-help&quot;&gt;Optional: SAVE10 for 10% off or WELCOME20 for 20% off.&lt;/p&gt;
+            &lt;button type=&quot;button&quot; className=&quot;secondary&quot; onClick={applyCoupon}&gt;Apply coupon&lt;/button&gt;
+            {couponMessage &amp;&amp; &lt;p role=&quot;status&quot;&gt;{couponMessage}&lt;/p&gt;}
+            {couponError &amp;&amp; &lt;p role=&quot;alert&quot; className=&quot;error&quot;&gt;{couponError}&lt;/p&gt;}
+            {error &amp;&amp; &lt;p role=&quot;alert&quot; className=&quot;error&quot;&gt;{error}&lt;/p&gt;}
+            &lt;button type=&quot;submit&quot; disabled={submitting}&gt;{submitting ? &#x27;Placing order…&#x27; : &#x27;Place order&#x27;}&lt;/button&gt;
+          &lt;/form&gt;
+        &lt;/&gt;
+      ) : &lt;&gt;&lt;p&gt;Your cart is empty.&lt;/p&gt;&lt;Link to=&quot;/products&quot;&gt;Browse products&lt;/Link&gt;&lt;/&gt;}
+    &lt;/section&gt;
+  )
+}
+</code></pre>
+<h3 id="source-frontend/src/pages/OrderSuccess.jsx">frontend/src/pages/OrderSuccess.jsx</h3><pre><code>import { Link } from &#x27;react-router-dom&#x27;
+import { money } from &#x27;../api/client.js&#x27;
+import { useStore } from &#x27;../context/store.js&#x27;
+
+export default function OrderSuccess() {
+  const { order } = useStore()
+
+  return (
+    &lt;section className=&quot;panel narrow&quot;&gt;
+      {order ? (
+        &lt;&gt;
+          &lt;p className=&quot;eyebrow&quot;&gt;Order confirmed&lt;/p&gt;
+          &lt;h1&gt;Thank you, {order.customer.name}!&lt;/h1&gt;
+          &lt;p role=&quot;status&quot;&gt;Your demo order was placed successfully.&lt;/p&gt;
+          &lt;p className=&quot;order-id&quot;&gt;Order number: {order.number}&lt;/p&gt;
+          &lt;p&gt;Date: &lt;time dateTime={order.date}&gt;{new Date(order.date).toLocaleString(&#x27;en-IN&#x27;)}&lt;/time&gt;&lt;/p&gt;
+          &lt;ul&gt;{order.items.map(item =&gt; (
+            &lt;li key={item.id}&gt;{item.name} × {item.quantity} — {money(item.price * item.quantity)}&lt;/li&gt;
+          ))}&lt;/ul&gt;
+          &lt;p&gt;Subtotal: {money(order.subtotal)}&lt;/p&gt;
+          &lt;p&gt;Discount{order.coupon ? ` (${order.coupon})` : &#x27;&#x27;}: {money(order.discount)}&lt;/p&gt;
+          &lt;h2&gt;Total: {money(order.total)}&lt;/h2&gt;
+        &lt;/&gt;
+      ) : &lt;&gt;&lt;h1&gt;Order status&lt;/h1&gt;&lt;p&gt;No order is available. Place an order to see its confirmation.&lt;/p&gt;&lt;/&gt;}
+      &lt;Link className=&quot;button&quot; to=&quot;/products&quot;&gt;Continue Shopping&lt;/Link&gt;{&#x27; &#x27;}
+      &lt;Link to=&quot;/orders&quot;&gt;View order history&lt;/Link&gt;
+    &lt;/section&gt;
+  )
+}
+</code></pre>
+<h3 id="source-frontend/src/pages/Orders.jsx">frontend/src/pages/Orders.jsx</h3><pre><code>import { Link } from &#x27;react-router-dom&#x27;
+import { money } from &#x27;../api/client.js&#x27;
+import { useStore } from &#x27;../context/store.js&#x27;
+
+export default function Orders() {
+  const { orders } = useStore()
+
+  return (
+    &lt;section&gt;
+      &lt;h1&gt;Order history&lt;/h1&gt;
+      {orders.length ? orders.map(order =&gt; (
+        &lt;article className=&quot;panel order-entry&quot; key={order.number} aria-label={`Order ${order.number}`}&gt;
+          &lt;h2 className=&quot;order-id&quot;&gt;Order number: {order.number}&lt;/h2&gt;
+          &lt;p&gt;Date: &lt;time dateTime={order.date}&gt;{new Date(order.date).toLocaleString(&#x27;en-IN&#x27;)}&lt;/time&gt;&lt;/p&gt;
+          &lt;ul&gt;{order.items.map(item =&gt; (
+            &lt;li key={item.id}&gt;{item.name} × {item.quantity} — {money(item.price * item.quantity)}&lt;/li&gt;
+          ))}&lt;/ul&gt;
+          &lt;p&gt;Subtotal: {money(order.subtotal)}&lt;/p&gt;
+          &lt;p&gt;Discount{order.coupon ? ` (${order.coupon})` : &#x27;&#x27;}: {money(order.discount)}&lt;/p&gt;
+          &lt;h2&gt;Total: {money(order.total)}&lt;/h2&gt;
+        &lt;/article&gt;
+      )) : &lt;p&gt;No orders yet.&lt;/p&gt;}
+      &lt;Link className=&quot;button&quot; to=&quot;/products&quot;&gt;Continue Shopping&lt;/Link&gt;
+    &lt;/section&gt;
+  )
+}
+</code></pre>
+<h3 id="source-frontend/src/App.jsx">frontend/src/App.jsx</h3><pre><code>import { BrowserRouter, Routes, Route, Navigate, Link } from &#x27;react-router-dom&#x27;
+import StoreProvider from &#x27;./context/StoreProvider.jsx&#x27;
+import { useStore } from &#x27;./context/store.js&#x27;
+import Navbar from &#x27;./components/Navbar.jsx&#x27;
+import Login from &#x27;./pages/Login.jsx&#x27;
+import Products from &#x27;./pages/Products.jsx&#x27;
+import Cart from &#x27;./pages/Cart.jsx&#x27;
+import Checkout from &#x27;./pages/Checkout.jsx&#x27;
+import OrderSuccess from &#x27;./pages/OrderSuccess.jsx&#x27;
+import Orders from &#x27;./pages/Orders.jsx&#x27;
+
+function Protected({ children }) {
+  const { session, checking } = useStore()
+  if (checking) return &lt;p role=&quot;status&quot;&gt;Checking session…&lt;/p&gt;
+  return session ? children : &lt;Navigate to=&quot;/&quot; replace /&gt;
+}
+export default function App() {
+  return &lt;BrowserRouter&gt;&lt;StoreProvider&gt;&lt;Navbar /&gt;&lt;main className=&quot;container&quot;&gt;&lt;Routes&gt;
+    &lt;Route path=&quot;/&quot; element={&lt;Login /&gt;} /&gt;
+    &lt;Route path=&quot;/products&quot; element={&lt;Protected&gt;&lt;Products /&gt;&lt;/Protected&gt;} /&gt;
+    &lt;Route path=&quot;/cart&quot; element={&lt;Protected&gt;&lt;Cart /&gt;&lt;/Protected&gt;} /&gt;
+    &lt;Route path=&quot;/checkout&quot; element={&lt;Protected&gt;&lt;Checkout /&gt;&lt;/Protected&gt;} /&gt;
+    &lt;Route path=&quot;/orders&quot; element={&lt;Protected&gt;&lt;Orders /&gt;&lt;/Protected&gt;} /&gt;
+    &lt;Route path=&quot;/success&quot; element={&lt;Protected&gt;&lt;OrderSuccess /&gt;&lt;/Protected&gt;} /&gt;
+    &lt;Route path=&quot;*&quot; element={&lt;section&gt;&lt;h1&gt;Page not found&lt;/h1&gt;&lt;Link to=&quot;/products&quot;&gt;Go to products&lt;/Link&gt;&lt;/section&gt;} /&gt;
+  &lt;/Routes&gt;&lt;/main&gt;&lt;footer&gt;TestLab Store · Research test application&lt;/footer&gt;&lt;/StoreProvider&gt;&lt;/BrowserRouter&gt;
+}
+</code></pre>
+<h3 id="source-frontend/src/components/Navbar.jsx">frontend/src/components/Navbar.jsx</h3><pre><code>import { NavLink, useNavigate } from &#x27;react-router-dom&#x27;
+import { useStore } from &#x27;../context/store.js&#x27;
+
+export default function Navbar() {
+  const { session, cart, logout } = useStore()
+  const navigate = useNavigate()
+  async function signOut() {
+    try { await logout() } catch { /* Local session is cleared even when the API is unavailable. */ }
+    navigate(&#x27;/&#x27;, { replace: true })
+  }
+  return &lt;header className=&quot;navbar&quot;&gt;
+    &lt;NavLink className=&quot;brand&quot; to=&quot;/products&quot;&gt;TestLab Store&lt;/NavLink&gt;
+    &lt;nav aria-label=&quot;Main navigation&quot;&gt;
+      &lt;NavLink to=&quot;/products&quot;&gt;Products&lt;/NavLink&gt;
+      &lt;NavLink to=&quot;/cart&quot;&gt;Cart ({cart.reduce((sum, item) =&gt; sum + item.quantity, 0)})&lt;/NavLink&gt;
+      &lt;NavLink to=&quot;/orders&quot;&gt;Orders&lt;/NavLink&gt;
+      {session ? &lt;&gt;&lt;span&gt;{session.user.name}&lt;/span&gt;&lt;button onClick={signOut}&gt;Log out&lt;/button&gt;&lt;/&gt; : &lt;NavLink to=&quot;/&quot;&gt;Log in&lt;/NavLink&gt;}
+    &lt;/nav&gt;
+  &lt;/header&gt;
+}
+</code></pre>
+<h3 id="source-frontend/src/index.css">frontend/src/index.css</h3><pre><code>@import url(&#x27;https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;display=swap&#x27;);
+:root{font-family:&#x27;DM Sans&#x27;,system-ui,sans-serif;color:#1c2940;background:#f5f7fb;font-synthesis:none;text-rendering:optimizeLegibility;line-height:1.6}
+*{box-sizing:border-box}body{margin:0}a{color:#2856c6}button,input{font:inherit}button,.button{background:#2856c6;color:white;border:0;border-radius:8px;padding:11px 20px;cursor:pointer;text-decoration:none;display:inline-block;font-weight:600}button:hover,.button:hover{background:#2046a4}button:disabled{opacity:.55;cursor:wait}button.secondary{background:#edf1f9;color:#294273}button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #e69d22;outline-offset:3px}.navbar{background:white;border-bottom:1px solid #e1e6ef;padding:20px max(24px,calc((100% - 1120px)/2));display:flex;justify-content:space-between;gap:24px;align-items:center}.brand{font-size:23px;font-weight:700;color:#1c2940;text-decoration:none;white-space:nowrap}nav{display:flex;align-items:center;gap:24px;flex-wrap:wrap}nav a{text-decoration:none}nav a.active{font-weight:700}.container{max-width:1120px;margin:0 auto;min-height:calc(100vh - 180px);padding:48px 24px}h1{font-size:clamp(28px,4vw,40px);letter-spacing:-1px;line-height:1.2;margin:12px 0 20px}h2{font-size:21px;margin:10px 0}p{margin:12px 0;color:#53617a}.eyebrow{text-transform:uppercase;font-size:12px;letter-spacing:2px;color:#2856c6;font-weight:700}.panel,.card{background:white;border:1px solid #e1e6ef;border-radius:16px;padding:28px}.narrow{max-width:600px;margin:20px auto}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px;margin:32px 0}.product-icon{display:grid;place-items:center;height:120px;background:#edf2fc;border-radius:10px;color:#2856c6;font-size:52px;font-weight:700}.price{font-size:22px;color:#1c2940}.card button{width:100%;margin-top:12px}form{display:grid;gap:18px;margin:24px 0}label{display:grid;gap:6px;font-weight:500}input{min-width:0;width:100%;padding:11px 12px;border:1px solid #b7c2d5;border-radius:7px;background:white;color:#1c2940}.hint{background:#edf2fc;padding:16px;border-radius:8px;font-size:14px;overflow-wrap:anywhere}.error{color:#af2638}.cart-item{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:18px 0;border-bottom:1px solid #e1e6ef}.cart-item label{max-width:180px;font-size:13px}.summary{display:flex;justify-content:space-between;align-items:center;gap:20px;margin:28px 0}.order-id{overflow-wrap:anywhere;font-size:13px}footer{text-align:center;padding:24px;color:#69758c;font-size:13px}@media(max-width:700px){.navbar{align-items:flex-start;flex-direction:column}nav{gap:16px}.cart-item,.summary{align-items:flex-start;flex-direction:column}.panel{padding:22px}.container{padding:24px 16px}}
+
+.catalog-controls{display:flex;gap:20px;flex-wrap:wrap;margin:24px 0}.catalog-controls label{flex:1;min-width:200px}select{font:inherit;width:100%;padding:11px 12px;border:1px solid #b7c2d5;border-radius:7px;background:white;color:#1c2940}select:focus-visible{outline:3px solid #e69d22;outline-offset:3px}.order-entry{margin:24px 0}
+</code></pre>
+<h3 id="source-frontend/src/context/shopState.test.js">frontend/src/context/shopState.test.js</h3><pre><code>import test from &#x27;node:test&#x27;
+import assert from &#x27;node:assert/strict&#x27;
+import { createShopState, updateCart, couponDetails, orderTotals, completeOrder } from &#x27;./shopState.js&#x27;
+
+const customer = { name: &#x27;Test Student&#x27;, email: &#x27;student@example.com&#x27;, address: &#x27;Test Campus&#x27; }
+const date = &#x27;2026-10-19T10:00:00.000Z&#x27;
+const add = (state, id) =&gt; updateCart(state, { type: &#x27;add&#x27;, id })
+const monitorCart = () =&gt; add(createShopState(), 4)
+const purchase = (state, coupon = &#x27;&#x27;, number = &#x27;ORD-TEST-1&#x27;) =&gt; completeOrder(state, customer, coupon, number, date)
+
+test(&#x27;each demo starts with independent stock and empty history&#x27;, () =&gt; {
+  const first = createShopState()
+  first.products[0].stock = 0
+  assert.equal(createShopState().products[0].stock, 5)
+  assert.deepEqual(createShopState().orders, [])
+})
+
+test(&#x27;adding twice merges the cart line without reducing stock&#x27;, () =&gt; {
+  const state = add(monitorCart(), 4)
+  assert.equal(state.cart.length, 1)
+  assert.equal(state.cart[0].quantity, 2)
+  assert.equal(state.products.find(item =&gt; item.id === 4).stock, 2)
+})
+
+test(&#x27;out-of-stock products cannot be added&#x27;, () =&gt; {
+  const state = createShopState()
+  assert.equal(add(state, 3), state)
+})
+
+test(&#x27;repeated additions cannot exceed inventory&#x27;, () =&gt; {
+  const state = add(monitorCart(), 4)
+  assert.equal(add(state, 4), state)
+})
+
+test(&#x27;quantity updates accept the stock boundary&#x27;, () =&gt; {
+  const state = updateCart(monitorCart(), { type: &#x27;quantity&#x27;, id: 4, quantity: 2 })
+  assert.equal(state.cart[0].quantity, 2)
+})
+
+for (const quantity of [0, -1, 1.5, 3, NaN]) {
+  test(`quantity ${quantity} is rejected without changing the cart`, () =&gt; {
+    const state = monitorCart()
+    assert.equal(updateCart(state, { type: &#x27;quantity&#x27;, id: 4, quantity }), state)
+  })
+}
+
+test(&#x27;remove and clear leave inventory unchanged&#x27;, () =&gt; {
+  const state = monitorCart()
+  for (const action of [{ type: &#x27;remove&#x27;, id: 4 }, { type: &#x27;clear&#x27; }]) {
+    const next = updateCart(state, action)
+    assert.deepEqual(next.cart, [])
+    assert.deepEqual(next.products, state.products)
+  }
+})
+
+test(&#x27;SAVE10 computes a 10 percent discount&#x27;, () =&gt; {
+  assert.deepEqual(orderTotals(monitorCart().cart, &#x27;SAVE10&#x27;), {
+    subtotal: 15000, discount: 1500, total: 13500, coupon: &#x27;SAVE10&#x27;,
+  })
+})
+
+test(&#x27;WELCOME20 computes a 20 percent discount&#x27;, () =&gt; {
+  assert.equal(orderTotals(monitorCart().cart, &#x27;WELCOME20&#x27;).total, 12000)
+})
+
+test(&#x27;empty coupon applies no discount&#x27;, () =&gt; {
+  assert.equal(orderTotals(monitorCart().cart, &#x27;   &#x27;).discount, 0)
+})
+
+test(&#x27;coupon normalization accepts surrounding spaces and lowercase&#x27;, () =&gt; {
+  assert.deepEqual(couponDetails(&#x27; save10 &#x27;), { code: &#x27;SAVE10&#x27;, rate: 0.1 })
+})
+
+test(&#x27;invalid and inherited-object coupon names are rejected&#x27;, () =&gt; {
+  for (const code of [&#x27;INVALID&#x27;, &#x27;constructor&#x27;, &#x27;__proto__&#x27;]) {
+    assert.throws(() =&gt; couponDetails(code), /Invalid coupon/)
+  }
+})
+
+test(&#x27;checkout commits inventory, immutable snapshot, date and discounted total together&#x27;, () =&gt; {
+  const state = monitorCart()
+  const next = purchase(state, &#x27;SAVE10&#x27;)
+  assert.equal(next.products.find(item =&gt; item.id === 4).stock, 1)
+  assert.equal(next.products.find(item =&gt; item.id === 1).stock, 5)
+  assert.deepEqual(next.cart, [])
+  assert.equal(next.orders[0].number, &#x27;ORD-TEST-1&#x27;)
+  assert.equal(next.orders[0].date, date)
+  assert.equal(next.orders[0].total, 13500)
+  assert.equal(next.orders[0].items[0].quantity, 1)
+  assert.equal(state.products.find(item =&gt; item.id === 4).stock, 2)
+  assert.equal(state.orders.length, 0)
+  assert.notEqual(next.orders[0].items[0], state.cart[0])
+})
+
+test(&#x27;second order exhausts inventory and history is newest first&#x27;, () =&gt; {
+  const first = purchase(monitorCart(), &#x27;SAVE10&#x27;)
+  const second = purchase(add(first, 4), &#x27;WELCOME20&#x27;, &#x27;ORD-TEST-2&#x27;)
+  assert.equal(second.products.find(item =&gt; item.id === 4).stock, 0)
+  assert.deepEqual(second.orders.map(order =&gt; order.number), [&#x27;ORD-TEST-2&#x27;, &#x27;ORD-TEST-1&#x27;])
+  assert.equal(second.orders[1].total, 13500)
+  assert.equal(second.orders[0].total, 12000)
+  assert.equal(add(second, 4), second)
+})
+
+test(&#x27;empty-cart checkout cannot create a duplicate order&#x27;, () =&gt; {
+  const state = purchase(monitorCart())
+  assert.throws(() =&gt; purchase(state), /cart is empty/)
+  assert.equal(state.orders.length, 1)
+})
+
+test(&#x27;invalid customer or coupon cannot decrement stock or append an order&#x27;, () =&gt; {
+  const state = monitorCart()
+  for (const input of [
+    { ...customer, name: &#x27;  &#x27; }, { ...customer, email: &#x27;invalid&#x27; }, { ...customer, address: &#x27;&#x27; },
+  ]) {
+    assert.throws(() =&gt; completeOrder(state, input, &#x27;&#x27;, &#x27;ORD-TEST&#x27;, date))
+  }
+  assert.throws(() =&gt; purchase(state, &#x27;INVALID&#x27;), /Invalid coupon/)
+  assert.equal(state.products.find(item =&gt; item.id === 4).stock, 2)
+  assert.equal(state.orders.length, 0)
+})
+
+test(&#x27;checkout revalidates inventory before changing any state&#x27;, () =&gt; {
+  const state = monitorCart()
+  state.products.find(item =&gt; item.id === 4).stock = 0
+  assert.throws(() =&gt; purchase(state), /no longer in stock/)
+  assert.equal(state.cart.length, 1)
+  assert.equal(state.orders.length, 0)
+})
+</code></pre>
+<h3 id="source-frontend/package.json">frontend/package.json</h3><pre><code>{
+  &quot;name&quot;: &quot;frontend&quot;,
+  &quot;private&quot;: true,
+  &quot;version&quot;: &quot;0.0.0&quot;,
+  &quot;type&quot;: &quot;module&quot;,
+  &quot;scripts&quot;: {
+    &quot;dev&quot;: &quot;vite&quot;,
+    &quot;build&quot;: &quot;vite build&quot;,
+    &quot;lint&quot;: &quot;oxlint&quot;,
+    &quot;preview&quot;: &quot;vite preview&quot;,
+    &quot;test&quot;: &quot;node --test src/context/shopState.test.js&quot;
+  },
+  &quot;dependencies&quot;: {
+    &quot;react&quot;: &quot;^19.2.8&quot;,
+    &quot;react-dom&quot;: &quot;^19.2.8&quot;,
+    &quot;react-router-dom&quot;: &quot;^7.18.4&quot;
+  },
+  &quot;devDependencies&quot;: {
+    &quot;@types/react&quot;: &quot;^19.2.18&quot;,
+    &quot;@types/react-dom&quot;: &quot;^19.2.7&quot;,
+    &quot;@vitejs/plugin-react&quot;: &quot;^6.1.1&quot;,
+    &quot;oxlint&quot;: &quot;^1.81.0&quot;,
+    &quot;vite&quot;: &quot;^8.3.0&quot;
+  }
+}
+</code></pre>
+</section></body></html>
