@@ -1,0 +1,262 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Playwright execution telemetry v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "record_type": {
+      "enum": [
+        "TEST_ATTEMPT",
+        "RUN_ERROR"
+      ]
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "attempt_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "test_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "test_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "suite_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "browser": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "TIMED_OUT",
+        "SKIPPED",
+        "INTERRUPTED"
+      ]
+    },
+    "failure_type": {
+      "enum": [
+        null,
+        "LOCATOR_NOT_FOUND",
+        "LOCATOR_AMBIGUOUS",
+        "ACTIONABILITY_FAILURE",
+        "ASSERTION_MISMATCH",
+        "STATE_CONSISTENCY_FAILURE",
+        "APPLICATION_RUNTIME_ERROR",
+        "SETUP_ENVIRONMENT_FAILURE",
+        "UNKNOWN"
+      ]
+    },
+    "duration_ms": {
+      "type": "number",
+      "minimum": 0
+    },
+    "retry_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "start_time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "end_time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "app_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "test_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "trace_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^artifacts/[A-Za-z0-9_./-]+$"
+    },
+    "screenshot_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^artifacts/[A-Za-z0-9_./-]+$"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "framework_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "playwright_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node_version",
+        "platform",
+        "architecture",
+        "os_release",
+        "hostname",
+        "ci",
+        "workers",
+        "git_commit"
+      ],
+      "properties": {
+        "node_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "platform": {
+          "type": "string",
+          "minLength": 1
+        },
+        "architecture": {
+          "type": "string",
+          "minLength": 1
+        },
+        "os_release": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hostname": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ci": {
+          "type": "boolean"
+        },
+        "workers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "git_commit": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "locator_mutation": {
+      "type": "string"
+    },
+    "fault_variant": {
+      "type": "string"
+    },
+    "experiment_id": {
+      "type": "string"
+    },
+    "scenario_variant": {
+      "type": "string"
+    },
+    "expected_status": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "TIMED_OUT",
+        "SKIPPED",
+        "INTERRUPTED"
+      ]
+    },
+    "classification_source": {
+      "enum": [
+        "NONE",
+        "ANNOTATION",
+        "HEURISTIC",
+        "UNKNOWN"
+      ]
+    },
+    "failure_phase": {
+      "enum": [
+        "test",
+        "setup",
+        "teardown",
+        "run"
+      ]
+    },
+    "error_message": {
+      "type": "string"
+    },
+    "error_stack": {
+      "type": "string"
+    },
+    "runtime_errors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "project_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "worker_index": {
+      "type": "integer",
+      "minimum": -1
+    },
+    "repeat_index": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "schema_version",
+    "record_type",
+    "run_id",
+    "attempt_id",
+    "test_id",
+    "test_name",
+    "suite_name",
+    "browser",
+    "status",
+    "failure_type",
+    "duration_ms",
+    "retry_count",
+    "start_time",
+    "end_time",
+    "app_version",
+    "test_version",
+    "trace_path",
+    "screenshot_path",
+    "notes",
+    "framework_version",
+    "playwright_version",
+    "timestamp",
+    "environment",
+    "locator_mutation",
+    "fault_variant",
+    "experiment_id",
+    "scenario_variant",
+    "expected_status",
+    "classification_source",
+    "failure_phase",
+    "error_message",
+    "error_stack",
+    "runtime_errors",
+    "project_name",
+    "worker_index",
+    "repeat_index"
+  ]
+}
