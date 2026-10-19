@@ -30,7 +30,7 @@ function event(changes = {}) {
 }
 const metadata = createRunMetadata({ workers: 1 })
 function record(changes = {}) {
-  return { schema_version: 3, record_type: 'TEST_ATTEMPT', ...metadata,
+  return { schema_version: 4, record_type: 'TEST_ATTEMPT', ...metadata,
     run_id: randomUUID(), attempt_id: randomUUID(), test_id: 'TEST-001', test_name: 'Checkout', suite_name: 'Checkout',
     browser: 'chromium', project_name: 'chromium', status: 'PASS', failure_type: null, duration_ms: 100,
     retry_count: 0, start_time: '2026-10-19T10:00:00.000Z', end_time: '2026-10-19T10:00:00.100Z',

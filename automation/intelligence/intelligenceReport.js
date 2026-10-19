@@ -57,7 +57,7 @@ export function buildIntelligenceReport(records, campaigns = [], { generatedAt =
     if (!campaignId && experimental(row)) { excluded.unverifiedExperimentAttempts++; continue }
     const identity = {
       testId: row.test_id, suiteName: row.suite_name, browser: row.browser, projectName: row.project_name,
-      cohort: campaignId ? 'verified-experiment' : 'ordinary', healingMode: row.healing_mode || 'NONE',
+      cohort: campaignId ? 'verified-experiment' : 'ordinary', healingMode: row.healing_mode || 'NONE', learningEnabled: row.learningEnabled || false,
       experimentId: row.experiment_id, faultVariant: row.fault_variant,
       scenarioVariant: row.scenario_variant, mutationVersion: row.mutation_version || '',
     }
@@ -102,7 +102,7 @@ export function buildIntelligenceReport(records, campaigns = [], { generatedAt =
 }
 
 export function reportCSV(report) {
-  const columns = ['groupId', 'testId', 'testName', 'suiteName', 'browser', 'projectName', 'cohort', 'healingMode', 'experimentId', 'faultVariant',
+  const columns = ['groupId', 'testId', 'testName', 'suiteName', 'browser', 'projectName', 'cohort', 'healingMode', 'learningEnabled', 'experimentId', 'faultVariant',
     'scenarioVariant', 'mutationVersion', 'scoredExecutionCount', 'failureRate', 'stabilityScore', 'retryCost', 'retryRate', 'locatorVolatility', 'riskScore', 'riskLevel', 'evidence', 'recommendations']
   const cell = value => {
     const text = value == null ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value)

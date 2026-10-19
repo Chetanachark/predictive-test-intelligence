@@ -3,11 +3,18 @@ import { performance } from 'node:perf_hooks'
 import { classifyFailure } from '../telemetry/taxonomy.js'
 import { HEALING_POLICY } from './confidenceScore.js'
 import { discoverCandidates, locatorFromDescriptor, readFeatures } from './candidateDiscovery.js'
+import { adaptiveRanking, ADAPTIVE_POLICY } from './adaptiveRanking.js'
+import { learningScope } from './knowledgeBase.js'
+import { LEARNING_EVENT_DEFAULTS } from './healingHistory.js'
 import { rankCandidates, selectCandidate } from './candidateRanking.js'
 
 export class HealingEngine {
-  constructor(page, { mode = 'ADAPTIVE', record = async () => {} } = {}) {
+  constructor(page, { mode = 'ADAPTIVE', record = async () => {}, learningEnabled = false, knowledgeBase = null, learningContext = null } = {}) {
     if (!['BASELINE', 'ADAPTIVE'].includes(mode)) throw new Error('Unknown healing mode')
+    if (typeof learningEnabled !== 'boolean' || learningEnabled && (mode === 'BASELINE' || !knowledgeBase || !learningContext?.appVersion || !learningContext?.browser)) throw new Error('Learning requires a healing-enabled mode, knowledge base, and versioned context')
+    this.learningEnabled = learningEnabled
+    this.knowledgeBase = knowledgeBase
+    this.learningContext = learningContext
     this.page = page
     this.mode = mode
     this.record = record
@@ -23,11 +30,12 @@ export class HealingEngine {
     if (!['click', 'fill'].includes(action) || typeof validate !== 'function') throw new Error('A supported action and original assertion callback are mandatory')
     const original = locatorFromDescriptor(this.page, descriptor)
     const started = performance.now()
-    const event = { operation_id: randomUUID(), healing_mode: this.mode, healing_attempted: false, healing_successful: false,
+    const scope = this.learningEnabled && reference?.role ? learningScope(this.learningContext, reference, action) : null
+    const event = { ...LEARNING_EVENT_DEFAULTS, learningEnabled: this.learningEnabled, learningScope: scope, operation_id: randomUUID(), healing_mode: this.mode, healing_attempted: false, healing_successful: false,
       original_locator: JSON.stringify(descriptor), candidate_locator: '', candidate_count: 0, confidence_score: 0,
       healing_duration_ms: 0, healing_reason: 'ORIGINAL_ACTION', original_failure_type: null, original_error: '',
       original_assertions_passed: false, action_completed: false, action_duration_ms: 0, total_duration_ms: 0,
-      reference: reference || {}, candidates: [], policy_version: HEALING_POLICY.version }
+      reference: reference || {}, candidates: [], policy_version: this.learningEnabled ? ADAPTIVE_POLICY.version : HEALING_POLICY.version }
     let originalError
     let healingStart
     const act = locator => action === 'click' ? locator.click({ timeout: HEALING_POLICY.actionTimeoutMs }) : locator.fill(value, { timeout: HEALING_POLICY.actionTimeoutMs })
@@ -57,7 +65,11 @@ export class HealingEngine {
         }
         event.healing_reason = 'CANDIDATE_DISCOVERY_FAILED'
         await this.record(event)
-        event.candidates = rankCandidates(reference, await discoverCandidates(this.page, reference))
+        const baseRanked = rankCandidates(reference, await discoverCandidates(this.page, reference))
+        const snapshot = this.learningEnabled ? this.knowledgeBase.snapshot() : null
+        event.knowledgeBaseVersion = snapshot?.version || ''
+        event.candidates = adaptiveRanking(baseRanked, { snapshot, scope, originalLocator: descriptor, learningEnabled: this.learningEnabled })
+        event.knowledgeBaseHit = event.candidates.some(candidate => candidate.knowledgeBaseHit)
         event.candidate_count = event.candidates.length
         if (performance.now() - healingStart > HEALING_POLICY.discoveryTimeoutMs) {
           event.healing_reason = 'DISCOVERY_BUDGET_EXCEEDED'
@@ -69,6 +81,7 @@ export class HealingEngine {
         const selected = selection.candidate
         event.candidate_locator = JSON.stringify(selected.descriptor)
         event.confidence_score = selected.confidence
+        event.historicalSuccessRate = selected.historicalSuccessRate
         const candidate = locatorFromDescriptor(this.page, selected.descriptor)
         // Revalidate identity immediately before the sole recovery action.
         if (await candidate.count() !== 1 || JSON.stringify(await readFeatures(candidate)) !== JSON.stringify(selected.features)) {

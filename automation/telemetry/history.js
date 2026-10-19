@@ -3,7 +3,7 @@ import path from 'node:path'
 import os from 'node:os'
 import { randomUUID, createHash } from 'node:crypto'
 import { healingRows, serializeHealingCSV } from '../healing/healingHistory.js'
-import { CSV_COLUMNS, LEGACY_COLUMNS, V2_COLUMNS, validateHistory, validateRecord, upgradeRecord } from './schema.js'
+import { CSV_COLUMNS, LEGACY_COLUMNS, V2_COLUMNS, V3_COLUMNS, validateHistory, validateRecord, upgradeRecord } from './schema.js'
 
 export function atomicWrite(file, content) {
   fs.mkdirSync(path.dirname(file), { recursive: true })
@@ -23,9 +23,9 @@ function csvCell(value) {
 }
 
 export function serializeCSV(records) {
-  const version = records[0]?.schema_version ?? 3
+  const version = records[0]?.schema_version ?? 4
   if (records.some(record => record.schema_version !== version)) throw new Error('Mixed schema versions require migration')
-  const columns = version === 1 ? LEGACY_COLUMNS : version === 2 ? V2_COLUMNS : CSV_COLUMNS
+  const columns = version === 1 ? LEGACY_COLUMNS : version === 2 ? V2_COLUMNS : version === 3 ? V3_COLUMNS : CSV_COLUMNS
   return [columns.join(','), ...records.map(record => columns.map(column => csvCell(record[column])).join(','))].join('\r\n') + '\r\n'
 }
 
@@ -65,10 +65,10 @@ export class HistoryStore {
   writeSnapshot(records) {
     atomicWrite(this.json, JSON.stringify(records, null, 2) + '\n')
     atomicWrite(this.csv, serializeCSV(records))
-    if (!records.length || records.every(row => row.schema_version === 3)) {
+    if (!records.length || records.every(row => row.schema_version >= 3)) {
       const rows = healingRows(records)
       atomicWrite(path.join(this.directory, 'healing-history.json'), JSON.stringify(rows, null, 2) + '\n')
-      atomicWrite(path.join(this.directory, 'healing-history.csv'), serializeHealingCSV(rows))
+      atomicWrite(path.join(this.directory, 'healing-history.csv'), serializeHealingCSV(rows, { legacy: records[0]?.schema_version === 3 }))
     }
   }
 
@@ -89,9 +89,9 @@ export class HistoryStore {
     if (!fs.existsSync(this.csv) || fs.readFileSync(this.csv, 'utf8') !== serializeCSV(records)) {
       throw new Error('JSON and CSV are inconsistent; refusing to overwrite existing history')
     }
-    if (records.every(row => row.schema_version === 3)) {
+    if (records.every(row => row.schema_version >= 3)) {
       const rows = healingRows(records)
-      const expected = [['healing-history.json', JSON.stringify(rows, null, 2) + '\n'], ['healing-history.csv', serializeHealingCSV(rows)]]
+      const expected = [['healing-history.json', JSON.stringify(rows, null, 2) + '\n'], ['healing-history.csv', serializeHealingCSV(rows, { legacy: records[0]?.schema_version === 3 })]]
       for (const [file, content] of expected) {
         if (!fs.existsSync(path.join(this.directory, file)) || fs.readFileSync(path.join(this.directory, file), 'utf8') !== content) throw new Error('Healing history projection is inconsistent; restore the projection from authoritative execution history')
       }
@@ -101,10 +101,10 @@ export class HistoryStore {
 
   append(record) {
     validateRecord(record)
-    if (record.schema_version !== 3) throw new Error('New records must use schema v3')
+    if (record.schema_version !== 4) throw new Error('New records must use schema v4')
     return this.withLock(() => {
       const records = this.readUnlocked()
-      if (records.some(item => item.schema_version !== 3)) throw new Error('Run npm run telemetry:migrate before appending to legacy schema history')
+      if (records.some(item => item.schema_version !== 4)) throw new Error('Run npm run telemetry:migrate before appending to legacy schema history')
       const existing = records.find(item => item.attempt_id === record.attempt_id)
       if (existing) {
         if (JSON.stringify(existing) !== JSON.stringify(record)) throw new Error('Conflicting duplicate attempt_id')
@@ -123,7 +123,7 @@ export class HistoryStore {
   migrate() {
     return this.withLock(() => {
       const records = this.readUnlocked()
-      if (!records.some(record => record.schema_version !== 3)) return { migrated: 0, backup: null }
+      if (!records.some(record => record.schema_version !== 4)) return { migrated: 0, backup: null }
       const backup = path.join(this.directory, 'migrations', randomUUID())
       fs.mkdirSync(backup, { recursive: true })
       const from = records[0].schema_version
@@ -134,7 +134,7 @@ export class HistoryStore {
       this.writeSnapshot(next)
       fs.unlinkSync(this.pending)
       atomicWrite(path.join(backup, 'migration.json'), JSON.stringify({
-        from, to: 3, count: records.length, migrated_at: new Date().toISOString(),
+        from, to: 4, count: records.length, migrated_at: new Date().toISOString(),
         original_sha256: createHash('sha256').update(fs.readFileSync(path.join(backup, `execution-history.v${from}.json`))).digest('hex'),
       }, null, 2) + '\n')
       return { migrated: records.length, backup }

@@ -14,5 +14,7 @@ export function readHealingResult(attachments, status, mode = 'NONE') {
     return event.healing_successful && status !== 'PASS'
       ? { ...event, healing_successful: false, healing_reason: 'FINAL_TEST_DID_NOT_PASS' } : event
   })
-  return summarizeHealing(events, payload.mode)
+  if (payload.learningEnabled !== undefined && typeof payload.learningEnabled !== 'boolean') throw new Error('Invalid learningEnabled attachment')
+  if (events.some(event => (event.learningEnabled || false) !== (payload.learningEnabled || false))) throw new Error('Mixed learning settings in one attempt')
+  return summarizeHealing(events, payload.mode, payload.learningEnabled || false)
 }

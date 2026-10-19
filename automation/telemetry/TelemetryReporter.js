@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import { applyFeedback } from '../healing/feedbackLoop.js'
 import { readHealingResult } from '../healing/healingReporter.js'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -123,7 +124,7 @@ export default class TelemetryReporter {
       const project = test.parent.project()
       const start = result.startTime.toISOString()
       const row = {
-        schema_version: 3, record_type: 'TEST_ATTEMPT',
+        schema_version: 4, record_type: 'TEST_ATTEMPT',
         ...this.metadata,
         attempt_id: attempt.id,
         test_id: testIdentity(test), test_name: test.title,
@@ -152,6 +153,7 @@ export default class TelemetryReporter {
       validateRecord(row)
       Object.assign(row, this.archiveArtifacts(result.attachments, attempt.id))
       this.store.append(row)
+      if (row.learningEnabled && !row.experiment_id && process.env.HEALING_FEEDBACK !== 'off') applyFeedback([row], { file: process.env.HEALING_KNOWLEDGE_BASE || path.join(this.directory, 'knowledge-base.json') })
       this.completed++
       this.writeManifest('RUNNING')
     })
@@ -162,7 +164,7 @@ export default class TelemetryReporter {
       this.ensureRun()
       const time = new Date().toISOString()
       const row = {
-        schema_version: 3, record_type: 'RUN_ERROR', ...this.metadata,
+        schema_version: 4, record_type: 'RUN_ERROR', ...this.metadata,
         attempt_id: randomUUID(), test_id: '__RUN__', test_name: 'Run-level error', suite_name: 'Run lifecycle',
         browser: 'runner', status: 'FAIL', failure_type: 'SETUP_ENVIRONMENT_FAILURE',
         duration_ms: 0, retry_count: 0, start_time: time, end_time: time,

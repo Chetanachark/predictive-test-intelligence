@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import { FAILURE_TYPES } from './taxonomy.js'
-import { HEALING_DEFAULTS, validateHealingFields } from '../healing/healingHistory.js'
+import { HEALING_DEFAULTS, LEARNING_DEFAULTS, validateHealingFields } from '../healing/healingHistory.js'
 
 const text = { type: 'string' }
 const requiredText = { type: 'string', minLength: 1 }
@@ -10,6 +10,8 @@ const path = { type: ['string', 'null'], pattern: '^artifacts/[A-Za-z0-9_./-]+$'
 const statuses = ['PASS', 'FAIL', 'TIMED_OUT', 'SKIPPED', 'INTERRUPTED']
 export const LEGACY_SCHEMA = JSON.parse(fs.readFileSync(new URL('./record.v1.schema.json', import.meta.url), 'utf8'))
 export const V2_SCHEMA = JSON.parse(fs.readFileSync(new URL('./record.v2.schema.json', import.meta.url), 'utf8'))
+export const V3_SCHEMA = JSON.parse(fs.readFileSync(new URL('./record.v3.schema.json', import.meta.url), 'utf8'))
+export const V3_COLUMNS = Object.freeze([...V3_SCHEMA.required])
 export const V2_COLUMNS = Object.freeze([...V2_SCHEMA.required])
 export const LEGACY_COLUMNS = Object.freeze([...LEGACY_SCHEMA.required])
 export const EXPERIMENT_DEFAULTS = Object.freeze({
@@ -19,11 +21,11 @@ export const EXPERIMENT_DEFAULTS = Object.freeze({
 
 export const RECORD_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
-  title: 'Playwright execution telemetry v3',
+  title: 'Playwright execution telemetry v4',
   type: 'object',
   additionalProperties: false,
   properties: {
-    schema_version: { const: 3 },
+    schema_version: { const: 4 },
     record_type: { enum: ['TEST_ATTEMPT', 'RUN_ERROR'] },
     run_id: uuid,
     attempt_id: uuid,
@@ -73,6 +75,9 @@ export const RECORD_SCHEMA = {
     project_name: requiredText,
     worker_index: { type: 'integer', minimum: -1 },
     repeat_index: { type: 'integer', minimum: 0 },
+    knowledgeBaseHit: { type: 'boolean' },
+    historicalSuccessRate: { type: ['number', 'null'], minimum: 0, maximum: 1 },
+    learningEnabled: { type: 'boolean' },
     healing_mode: { enum: ['NONE', 'BASELINE', 'ADAPTIVE'] },
     healing_attempted: { type: 'boolean' },
     healing_successful: { type: 'boolean' },
@@ -121,7 +126,7 @@ function validateValue(value, schema, name) {
 }
 
 export function validateRecord(record) {
-  validateValue(record, record?.schema_version === 1 ? LEGACY_SCHEMA : record?.schema_version === 2 ? V2_SCHEMA : RECORD_SCHEMA, 'record')
+  validateValue(record, record?.schema_version === 1 ? LEGACY_SCHEMA : record?.schema_version === 2 ? V2_SCHEMA : record?.schema_version === 3 ? V3_SCHEMA : RECORD_SCHEMA, 'record')
   const successful = ['PASS', 'SKIPPED'].includes(record.status)
   if (successful !== (record.failure_type === null)) throw new Error('status and failure_type are inconsistent')
   if ((record.failure_type === null) !== (record.classification_source === 'NONE')) throw new Error('classification_source is inconsistent')
@@ -143,7 +148,7 @@ export function validateRecord(record) {
     }
     if (record.injected_at && !record.emulated) throw new Error('injected_at requires emulated=true')
   }
-  if (record.schema_version === 3) validateHealingFields(record)
+  if (record.schema_version >= 3) validateHealingFields(record)
   // Environment and notes must remain serializable and reproducible in CSV.
   JSON.stringify(record)
   return record
@@ -162,5 +167,5 @@ export function validateHistory(records) {
 
 export function upgradeRecord(record) {
   validateRecord(record)
-  return record.schema_version === 3 ? record : validateRecord({ ...record, ...(record.schema_version === 1 ? EXPERIMENT_DEFAULTS : {}), ...HEALING_DEFAULTS, healing_events: [], schema_version: 3 })
+  return record.schema_version === 4 ? record : validateRecord({ ...record, ...(record.schema_version === 1 ? EXPERIMENT_DEFAULTS : {}), ...(record.schema_version < 3 ? { ...HEALING_DEFAULTS, healing_events: [] } : LEARNING_DEFAULTS), schema_version: 4 })
 }

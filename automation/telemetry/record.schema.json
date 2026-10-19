@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Playwright execution telemetry v3",
+  "title": "Playwright execution telemetry v4",
   "type": "object",
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "const": 3
+      "const": 4
     },
     "record_type": {
       "enum": [
@@ -252,6 +252,20 @@
       "type": "integer",
       "minimum": 0
     },
+    "knowledgeBaseHit": {
+      "type": "boolean"
+    },
+    "historicalSuccessRate": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "learningEnabled": {
+      "type": "boolean"
+    },
     "healing_mode": {
       "enum": [
         "NONE",
@@ -350,6 +364,9 @@
     "project_name",
     "worker_index",
     "repeat_index",
+    "knowledgeBaseHit",
+    "historicalSuccessRate",
+    "learningEnabled",
     "healing_mode",
     "healing_attempted",
     "healing_successful",

@@ -19,7 +19,7 @@ import { FAILURE_TYPES } from '../telemetry/taxonomy.js'
 const metadata = createRunMetadata({ workers: 1 })
 function record(overrides = {}) {
   const row = {
-    schema_version: 3, ...HEALING_DEFAULTS, healing_events: [], record_type: 'TEST_ATTEMPT', ...metadata,
+    schema_version: 4, ...HEALING_DEFAULTS, healing_events: [], record_type: 'TEST_ATTEMPT', ...metadata,
     run_id: randomUUID(), attempt_id: randomUUID(), test_id: 'TEST-001', test_name: 'Checkout', suite_name: 'Checkout',
     browser: 'chromium', project_name: 'chromium', status: 'PASS', failure_type: null, duration_ms: 100,
     retry_count: 0, start_time: '2026-10-19T10:00:00.000Z', end_time: '2026-10-19T10:00:00.100Z',
