@@ -48,15 +48,16 @@ function verifiedMembership(records, campaigns) {
 export function buildIntelligenceReport(records, campaigns = [], { generatedAt = new Date().toISOString(), analysisId = randomUUID() } = {}) {
   validateHistory(records)
   const membership = verifiedMembership(records, campaigns)
-  const excluded = { runErrors: 0, unverifiedExperimentAttempts: 0 }
+  const excluded = { runErrors: 0, unverifiedExperimentAttempts: 0, healingEvaluationAttempts: 0 }
   const groups = new Map()
   for (const row of records) {
     if (row.record_type === 'RUN_ERROR') { excluded.runErrors++; continue }
+    if (row.experiment_id.startsWith('S6-')) { excluded.healingEvaluationAttempts++; continue }
     const campaignId = membership.get(row.attempt_id)
     if (!campaignId && experimental(row)) { excluded.unverifiedExperimentAttempts++; continue }
     const identity = {
       testId: row.test_id, suiteName: row.suite_name, browser: row.browser, projectName: row.project_name,
-      cohort: campaignId ? 'verified-experiment' : 'ordinary',
+      cohort: campaignId ? 'verified-experiment' : 'ordinary', healingMode: row.healing_mode || 'NONE',
       experimentId: row.experiment_id, faultVariant: row.fault_variant,
       scenarioVariant: row.scenario_variant, mutationVersion: row.mutation_version || '',
     }
@@ -87,6 +88,7 @@ export function buildIntelligenceReport(records, campaigns = [], { generatedAt =
       ordinaryGroups: tests.filter(test => test.cohort === 'ordinary').length,
       experimentGroups: tests.filter(test => test.cohort === 'verified-experiment').length },
     limitations: [
+      'Sprint 6 controlled healing evaluations are excluded here; use their dedicated verified evaluation manifests.',
       'Retrospective heuristic priority score; not a predicted failure probability or a validated ML model.',
       'Locator volatility is the fraction of executions affected by observed locator failures, not measured DOM or locator revision frequency.',
       'Ordinary means no experiment metadata; legacy records cannot prove the absence of injected faults.',
@@ -100,7 +102,7 @@ export function buildIntelligenceReport(records, campaigns = [], { generatedAt =
 }
 
 export function reportCSV(report) {
-  const columns = ['groupId', 'testId', 'testName', 'suiteName', 'browser', 'projectName', 'cohort', 'experimentId', 'faultVariant',
+  const columns = ['groupId', 'testId', 'testName', 'suiteName', 'browser', 'projectName', 'cohort', 'healingMode', 'experimentId', 'faultVariant',
     'scenarioVariant', 'mutationVersion', 'scoredExecutionCount', 'failureRate', 'stabilityScore', 'retryCost', 'retryRate', 'locatorVolatility', 'riskScore', 'riskLevel', 'evidence', 'recommendations']
   const cell = value => {
     const text = value == null ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value)

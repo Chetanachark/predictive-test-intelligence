@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import { FAILURE_TYPES } from './taxonomy.js'
+import { HEALING_DEFAULTS, validateHealingFields } from '../healing/healingHistory.js'
 
 const text = { type: 'string' }
 const requiredText = { type: 'string', minLength: 1 }
@@ -8,6 +9,8 @@ const uuid = { type: 'string', pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[
 const path = { type: ['string', 'null'], pattern: '^artifacts/[A-Za-z0-9_./-]+$' }
 const statuses = ['PASS', 'FAIL', 'TIMED_OUT', 'SKIPPED', 'INTERRUPTED']
 export const LEGACY_SCHEMA = JSON.parse(fs.readFileSync(new URL('./record.v1.schema.json', import.meta.url), 'utf8'))
+export const V2_SCHEMA = JSON.parse(fs.readFileSync(new URL('./record.v2.schema.json', import.meta.url), 'utf8'))
+export const V2_COLUMNS = Object.freeze([...V2_SCHEMA.required])
 export const LEGACY_COLUMNS = Object.freeze([...LEGACY_SCHEMA.required])
 export const EXPERIMENT_DEFAULTS = Object.freeze({
   fault_type: '', emulated: false, injected_at: null, mutation_version: '',
@@ -16,11 +19,11 @@ export const EXPERIMENT_DEFAULTS = Object.freeze({
 
 export const RECORD_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
-  title: 'Playwright execution telemetry v2',
+  title: 'Playwright execution telemetry v3',
   type: 'object',
   additionalProperties: false,
   properties: {
-    schema_version: { const: 2 },
+    schema_version: { const: 3 },
     record_type: { enum: ['TEST_ATTEMPT', 'RUN_ERROR'] },
     run_id: uuid,
     attempt_id: uuid,
@@ -70,6 +73,17 @@ export const RECORD_SCHEMA = {
     project_name: requiredText,
     worker_index: { type: 'integer', minimum: -1 },
     repeat_index: { type: 'integer', minimum: 0 },
+    healing_mode: { enum: ['NONE', 'BASELINE', 'ADAPTIVE'] },
+    healing_attempted: { type: 'boolean' },
+    healing_successful: { type: 'boolean' },
+    original_locator: text,
+    candidate_locator: text,
+    candidate_count: { type: 'integer', minimum: 0 },
+    confidence_score: { type: 'number', minimum: 0, maximum: 1 },
+    healing_duration_ms: { type: 'number', minimum: 0 },
+    healing_reason: text,
+    original_failure_type: { enum: [null, ...FAILURE_TYPES] },
+    healing_events: { type: 'array', items: { type: 'object' } },
   },
 }
 RECORD_SCHEMA.required = Object.keys(RECORD_SCHEMA.properties)
@@ -83,7 +97,7 @@ function validateValue(value, schema, name) {
   if (types.length && !types.some(expected => expected === type || (expected === 'integer' && Number.isInteger(value)))) {
     throw new Error(`${name}: expected ${types.join('|')}`)
   }
-  if (typeof value === 'number' && (!Number.isFinite(value) || value < (schema.minimum ?? -Infinity))) {
+  if (typeof value === 'number' && (!Number.isFinite(value) || value < (schema.minimum ?? -Infinity) || value > (schema.maximum ?? Infinity))) {
     throw new Error(`${name}: invalid number`)
   }
   if (typeof value === 'string') {
@@ -107,7 +121,7 @@ function validateValue(value, schema, name) {
 }
 
 export function validateRecord(record) {
-  validateValue(record, record?.schema_version === 1 ? LEGACY_SCHEMA : RECORD_SCHEMA, 'record')
+  validateValue(record, record?.schema_version === 1 ? LEGACY_SCHEMA : record?.schema_version === 2 ? V2_SCHEMA : RECORD_SCHEMA, 'record')
   const successful = ['PASS', 'SKIPPED'].includes(record.status)
   if (successful !== (record.failure_type === null)) throw new Error('status and failure_type are inconsistent')
   if ((record.failure_type === null) !== (record.classification_source === 'NONE')) throw new Error('classification_source is inconsistent')
@@ -123,12 +137,13 @@ export function validateRecord(record) {
   if (record.record_type === 'RUN_ERROR' && (record.test_id !== '__RUN__' || record.failure_phase !== 'run')) {
     throw new Error('RUN_ERROR must use the run-level identity and phase')
   }
-  if (record.schema_version === 2) {
+  if (record.schema_version >= 2) {
     if (record.injection_verified && (!record.emulated || !record.injected_at || !record.experiment_id || !record.mutation_version)) {
       throw new Error('Verified emulated injections require experiment ID, mutation version, and injection time')
     }
     if (record.injected_at && !record.emulated) throw new Error('injected_at requires emulated=true')
   }
+  if (record.schema_version === 3) validateHealingFields(record)
   // Environment and notes must remain serializable and reproducible in CSV.
   JSON.stringify(record)
   return record
@@ -147,5 +162,5 @@ export function validateHistory(records) {
 
 export function upgradeRecord(record) {
   validateRecord(record)
-  return record.schema_version === 2 ? record : validateRecord({ ...record, schema_version: 2, ...EXPERIMENT_DEFAULTS })
+  return record.schema_version === 3 ? record : validateRecord({ ...record, ...(record.schema_version === 1 ? EXPERIMENT_DEFAULTS : {}), ...HEALING_DEFAULTS, healing_events: [], schema_version: 3 })
 }

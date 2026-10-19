@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Playwright execution telemetry v2",
+  "title": "Playwright execution telemetry v3",
   "type": "object",
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "const": 2
+      "const": 3
     },
     "record_type": {
       "enum": [
@@ -251,6 +251,60 @@
     "repeat_index": {
       "type": "integer",
       "minimum": 0
+    },
+    "healing_mode": {
+      "enum": [
+        "NONE",
+        "BASELINE",
+        "ADAPTIVE"
+      ]
+    },
+    "healing_attempted": {
+      "type": "boolean"
+    },
+    "healing_successful": {
+      "type": "boolean"
+    },
+    "original_locator": {
+      "type": "string"
+    },
+    "candidate_locator": {
+      "type": "string"
+    },
+    "candidate_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "confidence_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "healing_duration_ms": {
+      "type": "number",
+      "minimum": 0
+    },
+    "healing_reason": {
+      "type": "string"
+    },
+    "original_failure_type": {
+      "enum": [
+        null,
+        "LOCATOR_NOT_FOUND",
+        "LOCATOR_AMBIGUOUS",
+        "ACTIONABILITY_FAILURE",
+        "ASSERTION_MISMATCH",
+        "STATE_CONSISTENCY_FAILURE",
+        "APPLICATION_RUNTIME_ERROR",
+        "SETUP_ENVIRONMENT_FAILURE",
+        "UNKNOWN"
+      ]
+    },
+    "healing_events": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
     }
   },
   "required": [
@@ -295,6 +349,17 @@
     "runtime_errors",
     "project_name",
     "worker_index",
-    "repeat_index"
+    "repeat_index",
+    "healing_mode",
+    "healing_attempted",
+    "healing_successful",
+    "original_locator",
+    "candidate_locator",
+    "candidate_count",
+    "confidence_score",
+    "healing_duration_ms",
+    "healing_reason",
+    "original_failure_type",
+    "healing_events"
   ]
 }

@@ -23,7 +23,11 @@
     "experiments:report": "playwright show-report reports/experiments/html",
     "test:experiments": "node --test experiments/experiment.test.js",
     "intelligence": "node intelligence/intelligenceReport.js",
-    "test:intelligence": "node --test intelligence/intelligence.test.js"
+    "test:intelligence": "node --test intelligence/intelligence.test.js",
+    "test:healing": "node --test healing/healing.test.js",
+    "healing:evaluate": "node healing/evaluation/run.js",
+    "healing:report": "playwright show-report reports/healing/html",
+    "test:healing:browser": "playwright test --config healing/engine.playwright.config.js"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1"

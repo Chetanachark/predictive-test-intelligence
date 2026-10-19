@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import { readHealingResult } from '../healing/healingReporter.js'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
@@ -122,7 +123,7 @@ export default class TelemetryReporter {
       const project = test.parent.project()
       const start = result.startTime.toISOString()
       const row = {
-        schema_version: 2, record_type: 'TEST_ATTEMPT',
+        schema_version: 3, record_type: 'TEST_ATTEMPT',
         ...this.metadata,
         attempt_id: attempt.id,
         test_id: testIdentity(test), test_name: test.title,
@@ -139,6 +140,7 @@ export default class TelemetryReporter {
           ...(attempt.failedStep ? [`Failed step: ${attempt.failedStep.title}`] : []),
         ].join('\n'),
         ...experimentMetadata(annotations),
+        ...readHealingResult(result.attachments, status),
         expected_status: STATUS_MAP[test.expectedStatus],
         classification_source: classification.source, failure_phase: phase,
         error_message: errors.map(error => error.message || error.value || '').join('\n'),
@@ -160,13 +162,13 @@ export default class TelemetryReporter {
       this.ensureRun()
       const time = new Date().toISOString()
       const row = {
-        schema_version: 2, record_type: 'RUN_ERROR', ...this.metadata,
+        schema_version: 3, record_type: 'RUN_ERROR', ...this.metadata,
         attempt_id: randomUUID(), test_id: '__RUN__', test_name: 'Run-level error', suite_name: 'Run lifecycle',
         browser: 'runner', status: 'FAIL', failure_type: 'SETUP_ENVIRONMENT_FAILURE',
         duration_ms: 0, retry_count: 0, start_time: time, end_time: time,
         trace_path: null, screenshot_path: null,
         notes: 'Runner error, not attributed to an individual test. Exclude RUN_ERROR rows from test-attempt modeling.',
-        ...experimentMetadata(), expected_status: 'PASS', classification_source: 'HEURISTIC', failure_phase: 'run',
+        ...experimentMetadata(), ...readHealingResult([], 'FAIL'), expected_status: 'PASS', classification_source: 'HEURISTIC', failure_phase: 'run',
         error_message: error.message || error.value || 'Unspecified runner error', error_stack: error.stack || '',
         runtime_errors: [], project_name: 'runner', worker_index: -1, repeat_index: 0,
       }

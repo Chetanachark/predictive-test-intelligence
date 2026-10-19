@@ -37,7 +37,7 @@ export function createRunMetadata(config) {
     run_id: randomUUID(),
     timestamp: new Date().toISOString(),
     app_version: `${appPackage.version}+sha256:${sourceHash(path.join(PROJECT_ROOT, 'frontend'), ['src', 'package.json', 'package-lock.json', 'vite.config.js', 'index.html', 'public'])}`,
-    test_version: `${automationPackage.version}+sha256:${sourceHash(AUTOMATION_ROOT, ['pages', 'tests', 'fixtures', 'utils', 'telemetry', 'experiments', 'playwright.config.js', 'package.json', 'package-lock.json'])}`,
+    test_version: `${automationPackage.version}+sha256:${sourceHash(AUTOMATION_ROOT, ['pages', 'tests', 'fixtures', 'utils', 'telemetry', 'experiments', 'healing', 'playwright.config.js', 'package.json', 'package-lock.json'])}`,
     framework_version: automationPackage.version,
     playwright_version: require('@playwright/test/package.json').version,
     environment: {

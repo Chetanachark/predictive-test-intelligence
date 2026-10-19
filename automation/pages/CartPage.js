@@ -36,7 +36,10 @@ export class CartPage {
     await this.item(name).getByRole('button', { name: `Remove ${name}`, exact: true }).click()
   }
 
-  async openCheckout() {
+  async openCheckout({ healing, reference, validate } = {}) {
+    if (healing) return healing.perform({
+      descriptor: { strategy: 'role', role: 'link', value: 'Proceed to checkout' }, reference, validate,
+    })
     await this.checkoutLink.click()
   }
 }

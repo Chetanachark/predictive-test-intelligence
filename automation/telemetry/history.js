@@ -2,7 +2,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { randomUUID, createHash } from 'node:crypto'
-import { CSV_COLUMNS, LEGACY_COLUMNS, validateHistory, validateRecord, upgradeRecord } from './schema.js'
+import { healingRows, serializeHealingCSV } from '../healing/healingHistory.js'
+import { CSV_COLUMNS, LEGACY_COLUMNS, V2_COLUMNS, validateHistory, validateRecord, upgradeRecord } from './schema.js'
 
 export function atomicWrite(file, content) {
   fs.mkdirSync(path.dirname(file), { recursive: true })
@@ -22,9 +23,9 @@ function csvCell(value) {
 }
 
 export function serializeCSV(records) {
-  const version = records[0]?.schema_version ?? 2
+  const version = records[0]?.schema_version ?? 3
   if (records.some(record => record.schema_version !== version)) throw new Error('Mixed schema versions require migration')
-  const columns = version === 1 ? LEGACY_COLUMNS : CSV_COLUMNS
+  const columns = version === 1 ? LEGACY_COLUMNS : version === 2 ? V2_COLUMNS : CSV_COLUMNS
   return [columns.join(','), ...records.map(record => columns.map(column => csvCell(record[column])).join(','))].join('\r\n') + '\r\n'
 }
 
@@ -64,6 +65,11 @@ export class HistoryStore {
   writeSnapshot(records) {
     atomicWrite(this.json, JSON.stringify(records, null, 2) + '\n')
     atomicWrite(this.csv, serializeCSV(records))
+    if (!records.length || records.every(row => row.schema_version === 3)) {
+      const rows = healingRows(records)
+      atomicWrite(path.join(this.directory, 'healing-history.json'), JSON.stringify(rows, null, 2) + '\n')
+      atomicWrite(path.join(this.directory, 'healing-history.csv'), serializeHealingCSV(rows))
+    }
   }
 
   recover() {
@@ -83,22 +89,29 @@ export class HistoryStore {
     if (!fs.existsSync(this.csv) || fs.readFileSync(this.csv, 'utf8') !== serializeCSV(records)) {
       throw new Error('JSON and CSV are inconsistent; refusing to overwrite existing history')
     }
+    if (records.every(row => row.schema_version === 3)) {
+      const rows = healingRows(records)
+      const expected = [['healing-history.json', JSON.stringify(rows, null, 2) + '\n'], ['healing-history.csv', serializeHealingCSV(rows)]]
+      for (const [file, content] of expected) {
+        if (!fs.existsSync(path.join(this.directory, file)) || fs.readFileSync(path.join(this.directory, file), 'utf8') !== content) throw new Error('Healing history projection is inconsistent; restore the projection from authoritative execution history')
+      }
+    }
     return records
   }
 
   append(record) {
     validateRecord(record)
-    if (record.schema_version !== 2) throw new Error('New records must use schema v2')
+    if (record.schema_version !== 3) throw new Error('New records must use schema v3')
     return this.withLock(() => {
       const records = this.readUnlocked()
-      if (records.some(item => item.schema_version !== 2)) throw new Error('Run npm run telemetry:migrate before appending to schema v1 history')
+      if (records.some(item => item.schema_version !== 3)) throw new Error('Run npm run telemetry:migrate before appending to legacy schema history')
       const existing = records.find(item => item.attempt_id === record.attempt_id)
       if (existing) {
         if (JSON.stringify(existing) !== JSON.stringify(record)) throw new Error('Conflicting duplicate attempt_id')
         return false
       }
       records.push(record)
-      // Write-ahead journal repairs interrupted two-file publication on the next access.
+      // Write-ahead journal repairs interrupted execution/healing JSON/CSV publication on the next access.
       atomicWrite(this.pending, JSON.stringify(records))
       this.writeSnapshot(records)
       fs.unlinkSync(this.pending)
@@ -110,18 +123,19 @@ export class HistoryStore {
   migrate() {
     return this.withLock(() => {
       const records = this.readUnlocked()
-      if (!records.some(record => record.schema_version === 1)) return { migrated: 0, backup: null }
+      if (!records.some(record => record.schema_version !== 3)) return { migrated: 0, backup: null }
       const backup = path.join(this.directory, 'migrations', randomUUID())
       fs.mkdirSync(backup, { recursive: true })
-      fs.copyFileSync(this.json, path.join(backup, 'execution-history.v1.json'))
-      fs.copyFileSync(this.csv, path.join(backup, 'test-history.v1.csv'))
+      const from = records[0].schema_version
+      fs.copyFileSync(this.json, path.join(backup, `execution-history.v${from}.json`))
+      fs.copyFileSync(this.csv, path.join(backup, `test-history.v${from}.csv`))
       const next = records.map(upgradeRecord)
       atomicWrite(this.pending, JSON.stringify(next))
       this.writeSnapshot(next)
       fs.unlinkSync(this.pending)
       atomicWrite(path.join(backup, 'migration.json'), JSON.stringify({
-        from: 1, to: 2, count: records.length, migrated_at: new Date().toISOString(),
-        original_sha256: createHash('sha256').update(fs.readFileSync(path.join(backup, 'execution-history.v1.json'))).digest('hex'),
+        from, to: 3, count: records.length, migrated_at: new Date().toISOString(),
+        original_sha256: createHash('sha256').update(fs.readFileSync(path.join(backup, `execution-history.v${from}.json`))).digest('hex'),
       }, null, 2) + '\n')
       return { migrated: records.length, backup }
     })

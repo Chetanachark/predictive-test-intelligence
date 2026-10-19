@@ -69,10 +69,10 @@ test('source changes that remove or duplicate anchors are rejected', () => {
   assert.throws(() => mutateSource(definition, original + original), /exactly one/)
 })
 
-test('v2 preserves all legacy values and adds explicit migration defaults', () => {
+test('v3 preserves all legacy values and adds explicit migration defaults', () => {
   const legacy = legacyRecord()
   const next = upgradeRecord(legacy)
-  assert.equal(next.schema_version, 2)
+  assert.equal(next.schema_version, 3)
   for (const key of Object.keys(legacy).filter(key => key !== 'schema_version')) assert.deepEqual(next[key], legacy[key])
   assert.equal(next.emulated, false)
   assert.equal(next.injected_at, null)

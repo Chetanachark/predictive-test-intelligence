@@ -28,12 +28,18 @@ export class CheckoutPage {
     await this.address.fill(address)
   }
 
-  async applyCoupon(code) {
+  async applyCoupon(code, { healing, reference, validate } = {}) {
     await this.couponInput.fill(code)
+    if (healing) return healing.perform({
+      descriptor: { strategy: 'role', role: 'button', value: 'Apply coupon' }, reference, validate,
+    })
     await this.applyCouponButton.click()
   }
 
-  async submit() {
+  async submit({ healing, reference, validate } = {}) {
+    if (healing) return healing.perform({
+      descriptor: { strategy: 'role', role: 'button', value: 'Place order', includeHidden: true }, reference, validate,
+    })
     await this.placeOrderButton.click()
   }
 

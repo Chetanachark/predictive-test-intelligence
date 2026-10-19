@@ -1,4 +1,5 @@
 import test from 'node:test'
+import { HEALING_DEFAULTS } from '../healing/healingHistory.js'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -18,7 +19,7 @@ import { FAILURE_TYPES } from '../telemetry/taxonomy.js'
 const metadata = createRunMetadata({ workers: 1 })
 function record(overrides = {}) {
   const row = {
-    schema_version: 2, record_type: 'TEST_ATTEMPT', ...metadata,
+    schema_version: 3, ...HEALING_DEFAULTS, healing_events: [], record_type: 'TEST_ATTEMPT', ...metadata,
     run_id: randomUUID(), attempt_id: randomUUID(), test_id: 'TEST-001', test_name: 'Checkout', suite_name: 'Checkout',
     browser: 'chromium', project_name: 'chromium', status: 'PASS', failure_type: null, duration_ms: 100,
     retry_count: 0, start_time: '2026-10-19T10:00:00.000Z', end_time: '2026-10-19T10:00:00.100Z',
@@ -249,4 +250,12 @@ test('report preserves artifact references and uses observed labels despite expe
   assert.equal(result.artifacts[0].tracePath, row.trace_path)
   assert.ok(result.recommendations.some(text => text.includes('business requirement')))
   assert.ok(!result.recommendations.some(text => text.includes('Review locator strategy')))
+})
+
+
+test('Sprint 6 healing evaluation rows are explicitly excluded from ordinary risk summaries', () => {
+  const report = buildIntelligenceReport([record(), record({ experiment_id: 'S6-rename-v1', healing_mode: 'ADAPTIVE' })])
+  assert.equal(report.tests.length, 1)
+  assert.equal(report.selection.excluded.healingEvaluationAttempts, 1)
+  assert.equal(report.selection.excluded.unverifiedExperimentAttempts, 0)
 })
