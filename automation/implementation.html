@@ -1,0 +1,935 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sprint 2 — Complete Playwright Framework</title><style>body{max-width:1150px;margin:40px auto;padding:0 24px;font:16px/1.65 system-ui,sans-serif;color:#1c2940}h1,h2,h3{line-height:1.3}pre{background:#f1f4f9;padding:20px;border-radius:8px;overflow:auto;font:13px/1.6 ui-monospace,monospace}section{margin:36px 0}a{color:#2856c6}li{margin:7px 0}.status{padding:16px;background:#eaf6ed;border-radius:8px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccd3df;padding:10px;text-align:left}</style></head><body><h1>Sprint 2 — Playwright Automation</h1><p>Predictive Test Intelligence and Adaptive Self-Healing Framework for Playwright-Based Web Test Automation Using Machine Learning</p><p class="status">Delivered and executed: 34 Chromium tests passed in 10.5 seconds. Failure screenshot and trace capture verified in a separate controlled probe. No application source was changed.</p>
+<section><h2>1. Folder Structure</h2><pre>automation/
+├── pages/
+│   ├── LoginPage.js
+│   ├── ProductsPage.js
+│   ├── CartPage.js
+│   ├── CheckoutPage.js
+│   └── OrdersPage.js
+├── tests/
+│   ├── login.spec.js
+│   ├── products.spec.js
+│   ├── cart.spec.js
+│   ├── checkout.spec.js
+│   └── orders.spec.js
+├── utils/
+│   ├── testData.js
+│   ├── values.js
+│   └── flows.js
+├── fixtures/
+│   └── test.js
+├── reports/
+│   ├── .gitkeep
+│   ├── html/                 generated passing-suite HTML report
+│   ├── test-results/         generated per-test results
+│   ├── artifact-probe-results/ generated controlled failure artifacts
+│   └── artifact-probe-report/  separate controlled failure report
+├── playwright.config.js
+├── package.json
+├── package-lock.json
+├── .gitignore
+├── README.txt
+└── implementation.html</pre>
+<p>Page objects encapsulate reusable locators and actions. Tests own business assertions. Fixtures supply test-scoped page objects, flows handle common UI setup, and independent data defines expected results. All navigation after demo entry uses SPA links to preserve React state. Every test starts in an isolated context; no storage state, backend, or application state injection is needed.</p>
+<p>The framework follows Playwright's <a href="https://playwright.dev/docs/pom">page object model</a>, <a href="https://playwright.dev/docs/test-fixtures">test fixture</a>, <a href="https://playwright.dev/docs/test-webserver">web server</a>, and <a href="https://playwright.dev/docs/test-use-options">artifact configuration</a> guidance.</p></section>
+<section><h2>2. Files To Create / Creation Order</h2><ol><li>Package configuration, lockfile, Playwright configuration, and ignore rules.</li><li>Five page objects.</li><li>Reusable test data, value helpers, and UI flows.</li><li>The page-object fixture.</li><li>The five test suites.</li><li>Report-directory marker and setup guide.</li></ol><ul>
+<li><a href="#source-package.json">package.json</a></li>
+<li><a href="#source-package-lock.json">package-lock.json</a></li>
+<li><a href="#source-playwright.config.js">playwright.config.js</a></li>
+<li><a href="#source-.gitignore">.gitignore</a></li>
+<li><a href="#source-pages/LoginPage.js">pages/LoginPage.js</a></li>
+<li><a href="#source-pages/ProductsPage.js">pages/ProductsPage.js</a></li>
+<li><a href="#source-pages/CartPage.js">pages/CartPage.js</a></li>
+<li><a href="#source-pages/CheckoutPage.js">pages/CheckoutPage.js</a></li>
+<li><a href="#source-pages/OrdersPage.js">pages/OrdersPage.js</a></li>
+<li><a href="#source-utils/testData.js">utils/testData.js</a></li>
+<li><a href="#source-utils/values.js">utils/values.js</a></li>
+<li><a href="#source-utils/flows.js">utils/flows.js</a></li>
+<li><a href="#source-fixtures/test.js">fixtures/test.js</a></li>
+<li><a href="#source-tests/login.spec.js">tests/login.spec.js</a></li>
+<li><a href="#source-tests/products.spec.js">tests/products.spec.js</a></li>
+<li><a href="#source-tests/cart.spec.js">tests/cart.spec.js</a></li>
+<li><a href="#source-tests/checkout.spec.js">tests/checkout.spec.js</a></li>
+<li><a href="#source-tests/orders.spec.js">tests/orders.spec.js</a></li>
+<li><a href="#source-reports/.gitkeep">reports/.gitkeep</a></li>
+<li><a href="#source-README.txt">README.txt</a></li>
+</ul></section><section><h2>3. Complete Code For Each File</h2><p>These are the exact complete saved files. The empty .gitkeep file only preserves the reports directory. Generated reports and node_modules are excluded from this source listing.</p>
+<h3 id="source-package.json">package.json</h3><pre><code>{
+  &quot;name&quot;: &quot;predictive-test-automation&quot;,
+  &quot;version&quot;: &quot;1.0.0&quot;,
+  &quot;private&quot;: true,
+  &quot;type&quot;: &quot;module&quot;,
+  &quot;engines&quot;: {
+    &quot;node&quot;: &quot;&gt;=22&quot;
+  },
+  &quot;scripts&quot;: {
+    &quot;test&quot;: &quot;playwright test&quot;,
+    &quot;test:list&quot;: &quot;playwright test --list&quot;,
+    &quot;test:headed&quot;: &quot;playwright test --headed&quot;,
+    &quot;test:ui&quot;: &quot;playwright test --ui&quot;,
+    &quot;test:debug&quot;: &quot;playwright test --debug&quot;,
+    &quot;report&quot;: &quot;playwright show-report reports/html&quot;,
+    &quot;browsers:install&quot;: &quot;playwright install chromium&quot;
+  },
+  &quot;devDependencies&quot;: {
+    &quot;@playwright/test&quot;: &quot;1.64.1&quot;
+  }
+}
+</code></pre>
+<h3 id="source-package-lock.json">package-lock.json</h3><pre><code>{
+  &quot;name&quot;: &quot;predictive-test-automation&quot;,
+  &quot;version&quot;: &quot;1.0.0&quot;,
+  &quot;lockfileVersion&quot;: 3,
+  &quot;requires&quot;: true,
+  &quot;packages&quot;: {
+    &quot;&quot;: {
+      &quot;name&quot;: &quot;predictive-test-automation&quot;,
+      &quot;version&quot;: &quot;1.0.0&quot;,
+      &quot;devDependencies&quot;: {
+        &quot;@playwright/test&quot;: &quot;1.64.1&quot;
+      },
+      &quot;engines&quot;: {
+        &quot;node&quot;: &quot;&gt;=22&quot;
+      }
+    },
+    &quot;node_modules/@playwright/test&quot;: {
+      &quot;version&quot;: &quot;1.64.1&quot;,
+      &quot;resolved&quot;: &quot;https://registry.npmjs.org/@playwright/test/-/test-1.64.1.tgz&quot;,
+      &quot;integrity&quot;: &quot;sha512-IaYGml/nSOiZWROfPtuIL7neuu9qDOZ3TNvNljUIrhDMxiGTgPjzj/g9p9RxpS2tSepPDRY+UwAaEeiKtUvIAg==&quot;,
+      &quot;dev&quot;: true,
+      &quot;license&quot;: &quot;Apache-2.0&quot;,
+      &quot;dependencies&quot;: {
+        &quot;playwright&quot;: &quot;1.64.1&quot;
+      },
+      &quot;bin&quot;: {
+        &quot;playwright&quot;: &quot;cli.js&quot;
+      },
+      &quot;engines&quot;: {
+        &quot;node&quot;: &quot;&gt;=20&quot;
+      }
+    },
+    &quot;node_modules/playwright&quot;: {
+      &quot;version&quot;: &quot;1.64.1&quot;,
+      &quot;resolved&quot;: &quot;https://registry.npmjs.org/playwright/-/playwright-1.64.1.tgz&quot;,
+      &quot;integrity&quot;: &quot;sha512-HCrVhHr5QQuwYoswEUGTb7gGp522yflbv/ST8nF4sFWGuLjQCt17Q/EubpGGSNKYn1tsTCPZxqHhHCfVURu7UA==&quot;,
+      &quot;dev&quot;: true,
+      &quot;license&quot;: &quot;Apache-2.0&quot;,
+      &quot;dependencies&quot;: {
+        &quot;playwright-core&quot;: &quot;1.64.1&quot;
+      },
+      &quot;bin&quot;: {
+        &quot;playwright&quot;: &quot;cli.js&quot;
+      },
+      &quot;engines&quot;: {
+        &quot;node&quot;: &quot;&gt;=20&quot;
+      }
+    },
+    &quot;node_modules/playwright-core&quot;: {
+      &quot;version&quot;: &quot;1.64.1&quot;,
+      &quot;resolved&quot;: &quot;https://registry.npmjs.org/playwright-core/-/playwright-core-1.64.1.tgz&quot;,
+      &quot;integrity&quot;: &quot;sha512-BC4s8y6SEVA6Q1rSxZTto8hI1KUI3xXlHGZgvGqP4IqPdI/a6FX9H29IDNz7vKo9l21b6LfYosScPL6M3xxyDQ==&quot;,
+      &quot;dev&quot;: true,
+      &quot;license&quot;: &quot;Apache-2.0&quot;,
+      &quot;bin&quot;: {
+        &quot;playwright-core&quot;: &quot;cli.js&quot;
+      },
+      &quot;engines&quot;: {
+        &quot;node&quot;: &quot;&gt;=20&quot;
+      }
+    }
+  }
+}
+</code></pre>
+<h3 id="source-playwright.config.js">playwright.config.js</h3><pre><code>import { defineConfig, devices } from &#x27;@playwright/test&#x27;
+import { fileURLToPath } from &#x27;node:url&#x27;
+
+const externalURL = process.env.BASE_URL
+const localURL = &#x27;http://127.0.0.1:5174&#x27;
+
+export default defineConfig({
+  testDir: &#x27;./tests&#x27;,
+  fullyParallel: true,
+  forbidOnly: Boolean(process.env.CI),
+  retries: process.env.CI ? 1 : 0,
+  workers: process.env.CI ? 1 : 2,
+  timeout: 30_000,
+  expect: { timeout: 5_000 },
+  outputDir: &#x27;./reports/test-results&#x27;,
+  reporter: [
+    [&#x27;list&#x27;],
+    [&#x27;html&#x27;, { outputFolder: &#x27;./reports/html&#x27;, open: &#x27;never&#x27; }],
+  ],
+  use: {
+    baseURL: externalURL || localURL,
+    locale: &#x27;en-IN&#x27;,
+    timezoneId: &#x27;Asia/Kolkata&#x27;,
+    actionTimeout: 10_000,
+    navigationTimeout: 15_000,
+    screenshot: &#x27;only-on-failure&#x27;,
+    trace: &#x27;retain-on-failure&#x27;,
+  },
+  projects: [{ name: &#x27;chromium&#x27;, use: { ...devices[&#x27;Desktop Chrome&#x27;] } }],
+  webServer: externalURL ? undefined : {
+    command: &#x27;npm run dev -- --host 127.0.0.1 --port 5174&#x27;,
+    cwd: fileURLToPath(new URL(&#x27;../frontend&#x27;, import.meta.url)),
+    url: localURL,
+    reuseExistingServer: false,
+    timeout: 60_000,
+    gracefulShutdown: { signal: &#x27;SIGTERM&#x27;, timeout: 5_000 },
+  },
+})
+</code></pre>
+<h3 id="source-.gitignore">.gitignore</h3><pre><code>node_modules/
+reports/*
+!reports/.gitkeep
+</code></pre>
+<h3 id="source-pages/LoginPage.js">pages/LoginPage.js</h3><pre><code>export class LoginPage {
+  constructor(page) {
+    this.page = page
+    this.heading = page.getByRole(&#x27;heading&#x27;, { name: &#x27;Welcome to TestLab Store&#x27;, exact: true })
+    this.email = page.getByRole(&#x27;textbox&#x27;, { name: &#x27;Email&#x27;, exact: true })
+    this.password = page.getByLabel(&#x27;Password&#x27;, { exact: true })
+    this.submitButton = page.getByRole(&#x27;button&#x27;, { name: &#x27;Log in&#x27;, exact: true })
+  }
+
+  async open() {
+    await this.page.goto(&#x27;/&#x27;)
+  }
+
+  async login({ email, password }) {
+    await this.email.fill(email)
+    await this.password.fill(password)
+    await this.submitButton.click()
+  }
+}
+</code></pre>
+<h3 id="source-pages/ProductsPage.js">pages/ProductsPage.js</h3><pre><code>export class ProductsPage {
+  constructor(page) {
+    this.page = page
+    this.heading = page.getByRole(&#x27;heading&#x27;, { name: &#x27;Products&#x27;, exact: true })
+    this.searchInput = page.getByRole(&#x27;searchbox&#x27;, { name: &#x27;Search products&#x27;, exact: true })
+    this.categorySelect = page.getByRole(&#x27;combobox&#x27;, { name: &#x27;Category&#x27;, exact: true })
+    this.sortSelect = page.getByRole(&#x27;combobox&#x27;, { name: &#x27;Sort products&#x27;, exact: true })
+    this.cards = page.getByRole(&#x27;article&#x27;)
+    this.productNames = this.cards.getByRole(&#x27;heading&#x27;, { level: 2 })
+    this.noResults = page.getByText(&#x27;No products found.&#x27;, { exact: true })
+    const navigation = page.getByRole(&#x27;navigation&#x27;, { name: &#x27;Main navigation&#x27; })
+    this.productsLink = navigation.getByRole(&#x27;link&#x27;, { name: &#x27;Products&#x27;, exact: true })
+    this.cartLink = navigation.getByRole(&#x27;link&#x27;, { name: /^Cart \(\d+\)$/ })
+  }
+
+  product(name) {
+    return this.page.getByRole(&#x27;article&#x27;, { name, exact: true })
+  }
+
+  addButton(name) {
+    return this.product(name).getByRole(&#x27;button&#x27;, { name: `Add ${name} to cart`, exact: true })
+  }
+
+  async search(value) {
+    await this.searchInput.fill(value)
+  }
+
+  async filterCategory(label) {
+    await this.categorySelect.selectOption({ label })
+  }
+
+  async sortBy(label) {
+    await this.sortSelect.selectOption({ label })
+  }
+
+  async addToCart(name) {
+    await this.addButton(name).click()
+  }
+
+  // SPA links preserve the app&#x27;s in-memory cart, stock, and history.
+  async open() {
+    await this.productsLink.click()
+  }
+
+  async openCart() {
+    await this.cartLink.click()
+  }
+}
+</code></pre>
+<h3 id="source-pages/CartPage.js">pages/CartPage.js</h3><pre><code>export class CartPage {
+  constructor(page) {
+    this.page = page
+    this.heading = page.getByRole(&#x27;heading&#x27;, { name: &#x27;Your cart&#x27;, exact: true })
+    this.items = page.getByRole(&#x27;article&#x27;)
+    this.total = page.getByRole(&#x27;heading&#x27;, { name: /^Total:/ })
+    this.emptyMessage = page.getByText(&#x27;Your cart is empty.&#x27;, { exact: true })
+    this.checkoutLink = page.getByRole(&#x27;link&#x27;, { name: &#x27;Proceed to checkout&#x27;, exact: true })
+  }
+
+  item(name) {
+    return this.page.getByRole(&#x27;article&#x27;, { name, exact: true })
+  }
+
+  quantity(name) {
+    return this.item(name).getByRole(&#x27;spinbutton&#x27;, { name: `Quantity for ${name}`, exact: true })
+  }
+
+  increaseButton(name) {
+    return this.item(name).getByRole(&#x27;button&#x27;, { name: `Increase quantity of ${name}`, exact: true })
+  }
+
+  decreaseButton(name) {
+    return this.item(name).getByRole(&#x27;button&#x27;, { name: `Decrease quantity of ${name}`, exact: true })
+  }
+
+  async increase(name) {
+    await this.increaseButton(name).click()
+  }
+
+  async decrease(name) {
+    await this.decreaseButton(name).click()
+  }
+
+  async remove(name) {
+    await this.item(name).getByRole(&#x27;button&#x27;, { name: `Remove ${name}`, exact: true }).click()
+  }
+
+  async openCheckout() {
+    await this.checkoutLink.click()
+  }
+}
+</code></pre>
+<h3 id="source-pages/CheckoutPage.js">pages/CheckoutPage.js</h3><pre><code>export class CheckoutPage {
+  constructor(page) {
+    this.page = page
+    this.heading = page.getByRole(&#x27;heading&#x27;, { name: &#x27;Checkout&#x27;, exact: true })
+    this.fullName = page.getByRole(&#x27;textbox&#x27;, { name: &#x27;Full Name&#x27;, exact: true })
+    this.email = page.getByRole(&#x27;textbox&#x27;, { name: &#x27;Email&#x27;, exact: true })
+    this.address = page.getByRole(&#x27;textbox&#x27;, { name: &#x27;Address&#x27;, exact: true })
+    this.couponInput = page.getByRole(&#x27;textbox&#x27;, { name: &#x27;Coupon code&#x27;, exact: true })
+    this.applyCouponButton = page.getByRole(&#x27;button&#x27;, { name: &#x27;Apply coupon&#x27;, exact: true })
+    this.placeOrderButton = page.getByRole(&#x27;button&#x27;, { name: &#x27;Place order&#x27;, exact: true })
+    this.alerts = page.getByRole(&#x27;alert&#x27;)
+    this.couponStatus = page.getByRole(&#x27;status&#x27;)
+    this.subtotal = page.locator(&#x27;p&#x27;).filter({ hasText: /^Subtotal:/ }).locator(&#x27;strong&#x27;)
+    this.discount = page.locator(&#x27;p&#x27;).filter({ hasText: /^Discount:/ }).locator(&#x27;strong&#x27;)
+    this.total = page.locator(&#x27;p&#x27;).filter({ hasText: /^Total:/ }).locator(&#x27;strong&#x27;)
+    // Confirmation is part of the checkout workflow; no sixth page object is needed.
+    this.successMessage = page.getByRole(&#x27;status&#x27;).filter({ hasText: &#x27;Your demo order was placed successfully.&#x27; })
+    this.orderNumber = page.getByText(/^Order number: ORD-/)
+    this.confirmationTotal = page.getByRole(&#x27;heading&#x27;, { name: /^Total:/ })
+    this.confirmationItems = page.getByRole(&#x27;listitem&#x27;)
+    this.historyLink = page.getByRole(&#x27;link&#x27;, { name: &#x27;View order history&#x27;, exact: true })
+    this.continueShoppingLink = page.getByRole(&#x27;link&#x27;, { name: &#x27;Continue Shopping&#x27;, exact: true })
+  }
+
+  async fillCustomer({ name, email, address }) {
+    await this.fullName.fill(name)
+    await this.email.fill(email)
+    await this.address.fill(address)
+  }
+
+  async applyCoupon(code) {
+    await this.couponInput.fill(code)
+    await this.applyCouponButton.click()
+  }
+
+  async submit() {
+    await this.placeOrderButton.click()
+  }
+
+  async readOrderNumber() {
+    const text = await this.orderNumber.innerText()
+    return text.replace(&#x27;Order number: &#x27;, &#x27;&#x27;).trim()
+  }
+
+  async openHistory() {
+    await this.historyLink.click()
+  }
+
+  async continueShopping() {
+    await this.continueShoppingLink.click()
+  }
+}
+</code></pre>
+<h3 id="source-pages/OrdersPage.js">pages/OrdersPage.js</h3><pre><code>export class OrdersPage {
+  constructor(page) {
+    this.page = page
+    this.heading = page.getByRole(&#x27;heading&#x27;, { name: &#x27;Order history&#x27;, exact: true })
+    this.orders = page.getByRole(&#x27;article&#x27;)
+    this.emptyMessage = page.getByText(&#x27;No orders yet.&#x27;, { exact: true })
+    this.ordersLink = page.getByRole(&#x27;navigation&#x27;, { name: &#x27;Main navigation&#x27; })
+      .getByRole(&#x27;link&#x27;, { name: &#x27;Orders&#x27;, exact: true })
+  }
+
+  order(number) {
+    return this.page.getByRole(&#x27;article&#x27;, { name: `Order ${number}`, exact: true })
+  }
+
+  items(number) {
+    return this.order(number).getByRole(&#x27;listitem&#x27;)
+  }
+
+  total(number) {
+    return this.order(number).getByRole(&#x27;heading&#x27;, { name: /^Total:/ })
+  }
+
+  date(number) {
+    return this.order(number).locator(&#x27;time&#x27;)
+  }
+
+  async open() {
+    await this.ordersLink.click()
+  }
+}
+</code></pre>
+<h3 id="source-utils/testData.js">utils/testData.js</h3><pre><code>export const demoUser = Object.freeze({ email: &#x27;student@example.com&#x27;, password: &#x27;Student@123&#x27; })
+export const customer = Object.freeze({ name: &#x27;Test Student&#x27;, email: &#x27;student@example.com&#x27;, address: &#x27;Test Campus, Bengaluru&#x27; })
+export const coupons = Object.freeze({ invalid: &#x27;INVALID&#x27;, save10: &#x27;SAVE10&#x27;, welcome20: &#x27;WELCOME20&#x27; })
+export const primaryProduct = Object.freeze({ name: &#x27;Laptop&#x27;, price: 50000 })
+export const secondProduct = Object.freeze({ name: &#x27;Monitor&#x27;, price: 15000, stock: 2 })
+export const orderNumberPattern = /^ORD-[0-9A-F]{8}(?:-[0-9A-F]{4}){3}-[0-9A-F]{12}$/
+
+// Independent test oracle: do not import expectations from the application source.
+export const catalog = [
+  { name: &#x27;Laptop&#x27;, price: 50000, category: &#x27;Laptops&#x27; },
+  { name: &#x27;Smartphone&#x27;, price: 25000, category: &#x27;Mobiles&#x27; },
+  { name: &#x27;Headphones&#x27;, price: 3000, category: &#x27;Accessories&#x27; },
+  { name: &#x27;Monitor&#x27;, price: 15000, category: &#x27;Monitors&#x27; },
+  { name: &#x27;Ultrabook&#x27;, price: 75000, category: &#x27;Laptops&#x27; },
+  { name: &#x27;Student Laptop&#x27;, price: 35000, category: &#x27;Laptops&#x27; },
+  { name: &#x27;Business Laptop&#x27;, price: 65000, category: &#x27;Laptops&#x27; },
+  { name: &#x27;Convertible Laptop&#x27;, price: 80000, category: &#x27;Laptops&#x27; },
+  { name: &#x27;Budget Smartphone&#x27;, price: 12000, category: &#x27;Mobiles&#x27; },
+  { name: &#x27;Flagship Smartphone&#x27;, price: 70000, category: &#x27;Mobiles&#x27; },
+  { name: &#x27;Compact Smartphone&#x27;, price: 30000, category: &#x27;Mobiles&#x27; },
+  { name: &#x27;Foldable Smartphone&#x27;, price: 95000, category: &#x27;Mobiles&#x27; },
+  { name: &#x27;Wireless Mouse&#x27;, price: 1500, category: &#x27;Accessories&#x27; },
+  { name: &#x27;USB Keyboard&#x27;, price: 2000, category: &#x27;Accessories&#x27; },
+  { name: &#x27;USB-C Hub&#x27;, price: 3500, category: &#x27;Accessories&#x27; },
+  { name: &#x27;Laptop Stand&#x27;, price: 2500, category: &#x27;Accessories&#x27; },
+  { name: &#x27;Full HD Monitor&#x27;, price: 12000, category: &#x27;Monitors&#x27; },
+  { name: &#x27;4K Monitor&#x27;, price: 35000, category: &#x27;Monitors&#x27; },
+  { name: &#x27;Ultrawide Monitor&#x27;, price: 45000, category: &#x27;Monitors&#x27; },
+  { name: &#x27;Portable Monitor&#x27;, price: 18000, category: &#x27;Monitors&#x27; },
+  { name: &#x27;Gaming Laptop&#x27;, price: 90000, category: &#x27;Gaming&#x27; },
+  { name: &#x27;Gaming Mouse&#x27;, price: 4000, category: &#x27;Gaming&#x27; },
+  { name: &#x27;Gaming Keyboard&#x27;, price: 6000, category: &#x27;Gaming&#x27; },
+  { name: &#x27;Gaming Headset&#x27;, price: 5000, category: &#x27;Gaming&#x27; },
+  { name: &#x27;Game Controller&#x27;, price: 4500, category: &#x27;Gaming&#x27; },
+]
+
+export const categoryNames = [&#x27;Laptops&#x27;, &#x27;Mobiles&#x27;, &#x27;Accessories&#x27;, &#x27;Monitors&#x27;, &#x27;Gaming&#x27;]
+</code></pre>
+<h3 id="source-utils/values.js">utils/values.js</h3><pre><code>export function formatPrice(amount) {
+  return new Intl.NumberFormat(&#x27;en-IN&#x27;, {
+    style: &#x27;currency&#x27;, currency: &#x27;INR&#x27;, maximumFractionDigits: 0,
+  }).format(amount)
+}
+
+export function namesByPrice(direction = &#x27;ascending&#x27;, products) {
+  const multiplier = direction === &#x27;ascending&#x27; ? 1 : -1
+  return [...products].sort((a, b) =&gt; multiplier * (a.price - b.price) || a.name.localeCompare(b.name))
+    .map(product =&gt; product.name)
+}
+</code></pre>
+<h3 id="source-utils/flows.js">utils/flows.js</h3><pre><code>import { expect } from &#x27;@playwright/test&#x27;
+import { demoUser, primaryProduct, customer } from &#x27;./testData.js&#x27;
+
+export async function enterDemo(app) {
+  await app.login.open()
+  await app.login.login(demoUser)
+  await expect(app.products.heading).toBeVisible()
+}
+
+export async function startCheckout(app, product = primaryProduct.name) {
+  await app.products.addToCart(product)
+  await app.products.openCart()
+  await expect(app.cart.heading).toBeVisible()
+  await app.cart.openCheckout()
+  await expect(app.checkout.heading).toBeVisible()
+}
+
+export async function finishCheckout(app, details = customer) {
+  await app.checkout.fillCustomer(details)
+  await app.checkout.submit()
+  await expect(app.checkout.successMessage).toBeVisible()
+  return app.checkout.readOrderNumber()
+}
+</code></pre>
+<h3 id="source-fixtures/test.js">fixtures/test.js</h3><pre><code>import { test as base, expect } from &#x27;@playwright/test&#x27;
+import { LoginPage } from &#x27;../pages/LoginPage.js&#x27;
+import { ProductsPage } from &#x27;../pages/ProductsPage.js&#x27;
+import { CartPage } from &#x27;../pages/CartPage.js&#x27;
+import { CheckoutPage } from &#x27;../pages/CheckoutPage.js&#x27;
+import { OrdersPage } from &#x27;../pages/OrdersPage.js&#x27;
+
+export const test = base.extend({
+  app: async ({ page }, use) =&gt; {
+    // Keep the SUT independent of external font service availability.
+    // No application requests or application state are mocked.
+    await page.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, route =&gt; route.abort())
+    await use({
+      login: new LoginPage(page),
+      products: new ProductsPage(page),
+      cart: new CartPage(page),
+      checkout: new CheckoutPage(page),
+      orders: new OrdersPage(page),
+    })
+  },
+})
+
+export { expect }
+</code></pre>
+<h3 id="source-tests/login.spec.js">tests/login.spec.js</h3><pre><code>import { test, expect } from &#x27;../fixtures/test.js&#x27;
+import { demoUser } from &#x27;../utils/testData.js&#x27;
+
+test.describe(&#x27;Demo login&#x27;, () =&gt; {
+  test.beforeEach(async ({ app }) =&gt; {
+    await app.login.open()
+  })
+
+  test(&#x27;LOGIN-001 successful login opens the local product catalog&#x27;, async ({ app, page }) =&gt; {
+    await expect(app.login.heading).toBeVisible()
+    await app.login.login(demoUser)
+    await expect(page).toHaveURL(/\/products$/)
+    await expect(app.products.heading).toBeVisible()
+    await expect(app.products.cards).toHaveCount(25)
+  })
+})
+</code></pre>
+<h3 id="source-tests/products.spec.js">tests/products.spec.js</h3><pre><code>import { test, expect } from &#x27;../fixtures/test.js&#x27;
+import { catalog, categoryNames, primaryProduct } from &#x27;../utils/testData.js&#x27;
+import { namesByPrice } from &#x27;../utils/values.js&#x27;
+import { enterDemo } from &#x27;../utils/flows.js&#x27;
+
+test.describe(&#x27;Product catalog&#x27;, () =&gt; {
+  test.beforeEach(async ({ app }) =&gt; {
+    await enterDemo(app)
+  })
+
+  test(&#x27;PRODUCTS-001 all 25 products are visible&#x27;, async ({ app }) =&gt; {
+    await expect(app.products.cards).toHaveCount(25)
+    await expect(app.products.productNames).toHaveText(catalog.map(product =&gt; product.name).sort((a, b) =&gt; a.localeCompare(b)))
+  })
+
+  test(&#x27;PRODUCTS-002 search matches product names&#x27;, async ({ app }) =&gt; {
+    await app.products.search(&#x27;Ultrabook&#x27;)
+    await expect(app.products.cards).toHaveCount(1)
+    await expect(app.products.productNames).toHaveText([&#x27;Ultrabook&#x27;])
+  })
+
+  test(&#x27;PRODUCTS-003 partial search is case insensitive&#x27;, async ({ app }) =&gt; {
+    await app.products.search(&#x27;  PHONE  &#x27;)
+    await expect(app.products.productNames).toHaveText([
+      &#x27;Budget Smartphone&#x27;, &#x27;Compact Smartphone&#x27;, &#x27;Flagship Smartphone&#x27;,
+      &#x27;Foldable Smartphone&#x27;, &#x27;Headphones&#x27;, &#x27;Smartphone&#x27;,
+    ])
+  })
+
+  test(&#x27;PRODUCTS-004 unmatched search shows the empty state&#x27;, async ({ app }) =&gt; {
+    await app.products.search(&#x27;NoSuchProduct987&#x27;)
+    await expect(app.products.cards).toHaveCount(0)
+    await expect(app.products.noResults).toBeVisible()
+  })
+
+  test(&#x27;PRODUCTS-005 clearing search restores products&#x27;, async ({ app }) =&gt; {
+    await app.products.search(&#x27;Ultrabook&#x27;)
+    await expect(app.products.cards).toHaveCount(1)
+    await app.products.search(&#x27;&#x27;)
+    await expect(app.products.cards).toHaveCount(25)
+  })
+
+  for (const [index, category] of categoryNames.entries()) {
+    test(`PRODUCTS-${String(index + 6).padStart(3, &#x27;0&#x27;)} category filter shows only ${category}`, async ({ app }) =&gt; {
+      await app.products.filterCategory(category)
+      const expected = catalog.filter(product =&gt; product.category === category)
+        .map(product =&gt; product.name).sort((a, b) =&gt; a.localeCompare(b))
+      await expect(app.products.cards).toHaveCount(5)
+      await expect(app.products.productNames).toHaveText(expected)
+    })
+  }
+
+  test(&#x27;PRODUCTS-011 sort price low to high&#x27;, async ({ app }) =&gt; {
+    await app.products.sortBy(&#x27;Price Low-High&#x27;)
+    await expect(app.products.productNames).toHaveText(namesByPrice(&#x27;ascending&#x27;, catalog))
+  })
+
+  test(&#x27;PRODUCTS-012 sort price high to low&#x27;, async ({ app }) =&gt; {
+    await app.products.sortBy(&#x27;Price High-Low&#x27;)
+    await expect(app.products.productNames).toHaveText(namesByPrice(&#x27;descending&#x27;, catalog))
+  })
+
+  test(&#x27;PRODUCTS-013 sort changes dynamically&#x27;, async ({ app }) =&gt; {
+    await app.products.sortBy(&#x27;Name Z-A&#x27;)
+    await expect(app.products.productNames).toHaveText(catalog.map(product =&gt; product.name).sort((a, b) =&gt; b.localeCompare(a)))
+    await app.products.sortBy(&#x27;Name A-Z&#x27;)
+    await expect(app.products.productNames).toHaveText(catalog.map(product =&gt; product.name).sort((a, b) =&gt; a.localeCompare(b)))
+  })
+
+  test(&#x27;PRODUCTS-014 category, search, and sort work together&#x27;, async ({ app }) =&gt; {
+    await app.products.filterCategory(&#x27;Gaming&#x27;)
+    await app.products.search(&#x27;Gaming&#x27;)
+    await app.products.sortBy(&#x27;Price High-Low&#x27;)
+    await expect(app.products.productNames).toHaveText([&#x27;Gaming Laptop&#x27;, &#x27;Gaming Keyboard&#x27;, &#x27;Gaming Headset&#x27;, &#x27;Gaming Mouse&#x27;])
+    await app.products.search(&#x27;&#x27;)
+    await app.products.filterCategory(&#x27;All categories&#x27;)
+    await expect(app.products.productNames).toHaveText(namesByPrice(&#x27;descending&#x27;, catalog))
+  })
+
+  test(&#x27;PRODUCTS-015 adding a product updates the cart&#x27;, async ({ app }) =&gt; {
+    await app.products.addToCart(primaryProduct.name)
+    await expect(app.products.cartLink).toHaveText(&#x27;Cart (1)&#x27;)
+    await app.products.openCart()
+    await expect(app.cart.item(primaryProduct.name)).toBeVisible()
+    await expect(app.cart.quantity(primaryProduct.name)).toHaveValue(&#x27;1&#x27;)
+  })
+
+  test(&#x27;PRODUCTS-016 out-of-stock products cannot be added&#x27;, async ({ app }) =&gt; {
+    await expect(app.products.product(&#x27;Headphones&#x27;)).toContainText(&#x27;Out of Stock&#x27;)
+    await expect(app.products.addButton(&#x27;Headphones&#x27;)).toBeDisabled()
+    await expect(app.products.cartLink).toHaveText(&#x27;Cart (0)&#x27;)
+  })
+})
+</code></pre>
+<h3 id="source-tests/cart.spec.js">tests/cart.spec.js</h3><pre><code>import { test, expect } from &#x27;../fixtures/test.js&#x27;
+import { primaryProduct, secondProduct } from &#x27;../utils/testData.js&#x27;
+import { formatPrice } from &#x27;../utils/values.js&#x27;
+import { enterDemo } from &#x27;../utils/flows.js&#x27;
+
+test.describe(&#x27;Cart&#x27;, () =&gt; {
+  test.beforeEach(async ({ app }) =&gt; {
+    await enterDemo(app)
+    await app.products.addToCart(primaryProduct.name)
+    await app.products.openCart()
+    await expect(app.cart.heading).toBeVisible()
+  })
+
+  test(&#x27;CART-001 increase quantity updates total&#x27;, async ({ app }) =&gt; {
+    await app.cart.increase(primaryProduct.name)
+    await expect(app.cart.quantity(primaryProduct.name)).toHaveValue(&#x27;2&#x27;)
+    await expect(app.cart.total).toHaveText(`Total: ${formatPrice(100000)}`)
+  })
+
+  test(&#x27;CART-002 decrease quantity updates total&#x27;, async ({ app }) =&gt; {
+    await app.cart.increase(primaryProduct.name)
+    await expect(app.cart.quantity(primaryProduct.name)).toHaveValue(&#x27;2&#x27;)
+    await app.cart.decrease(primaryProduct.name)
+    await expect(app.cart.quantity(primaryProduct.name)).toHaveValue(&#x27;1&#x27;)
+    await expect(app.cart.total).toHaveText(`Total: ${formatPrice(50000)}`)
+  })
+
+  test(&#x27;CART-003 remove the last item shows an empty cart&#x27;, async ({ app }) =&gt; {
+    await app.cart.remove(primaryProduct.name)
+    await expect(app.cart.items).toHaveCount(0)
+    await expect(app.cart.emptyMessage).toBeVisible()
+    await expect(app.cart.checkoutLink).toHaveCount(0)
+  })
+
+  test(&#x27;CART-004 multiple items contribute to the total&#x27;, async ({ app }) =&gt; {
+    await app.products.open()
+    await app.products.addToCart(secondProduct.name)
+    await app.products.openCart()
+    await expect(app.cart.items).toHaveCount(2)
+    await expect(app.cart.total).toHaveText(`Total: ${formatPrice(65000)}`)
+  })
+
+  test(&#x27;CART-005 quantity cannot decrease below one&#x27;, async ({ app }) =&gt; {
+    await expect(app.cart.quantity(primaryProduct.name)).toHaveValue(&#x27;1&#x27;)
+    await expect(app.cart.decreaseButton(primaryProduct.name)).toBeDisabled()
+  })
+
+  test(&#x27;CART-006 quantity cannot increase above stock&#x27;, async ({ app }) =&gt; {
+    await app.products.open()
+    await app.products.addToCart(secondProduct.name)
+    await app.products.openCart()
+    await app.cart.increase(secondProduct.name)
+    await expect(app.cart.quantity(secondProduct.name)).toHaveValue(&#x27;2&#x27;)
+    await expect(app.cart.increaseButton(secondProduct.name)).toBeDisabled()
+  })
+})
+</code></pre>
+<h3 id="source-tests/checkout.spec.js">tests/checkout.spec.js</h3><pre><code>import { test, expect } from &#x27;../fixtures/test.js&#x27;
+import { coupons, customer, primaryProduct, orderNumberPattern } from &#x27;../utils/testData.js&#x27;
+import { formatPrice } from &#x27;../utils/values.js&#x27;
+import { enterDemo, startCheckout, finishCheckout } from &#x27;../utils/flows.js&#x27;
+
+test.describe(&#x27;Checkout&#x27;, () =&gt; {
+  test.beforeEach(async ({ app }) =&gt; {
+    await enterDemo(app)
+    await startCheckout(app)
+  })
+
+  test(&#x27;CHECKOUT-001 empty form is blocked by required-field validation&#x27;, async ({ app, page }) =&gt; {
+    await app.checkout.submit()
+    for (const field of [app.checkout.fullName, app.checkout.email, app.checkout.address]) {
+      await expect(field).toHaveAttribute(&#x27;required&#x27;, &#x27;&#x27;)
+      expect(await field.evaluate(element =&gt; element.validity.valueMissing)).toBe(true)
+    }
+    await expect(page).toHaveURL(/\/checkout$/)
+    await expect(app.checkout.successMessage).toHaveCount(0)
+    await expect(app.products.cartLink).toHaveText(&#x27;Cart (1)&#x27;)
+  })
+
+  test(&#x27;CHECKOUT-002 invalid coupon shows validation and cannot place an order&#x27;, async ({ app, page }) =&gt; {
+    await app.checkout.fillCustomer(customer)
+    await app.checkout.applyCoupon(coupons.invalid)
+    await expect(app.checkout.alerts).toHaveText(&#x27;Invalid coupon code.&#x27;)
+    await expect(app.checkout.discount).toHaveText(formatPrice(0))
+    await expect(app.checkout.total).toHaveText(formatPrice(50000))
+    await app.checkout.submit()
+    await expect(page).toHaveURL(/\/checkout$/)
+    await expect(app.checkout.alerts).toHaveText(&#x27;Apply or clear the coupon before placing your order.&#x27;)
+  })
+
+  for (const { id, code, discount, total } of [
+    { id: &#x27;003&#x27;, code: coupons.save10, discount: 5000, total: 45000 },
+    { id: &#x27;004&#x27;, code: coupons.welcome20, discount: 10000, total: 40000 },
+  ]) {
+    test(`CHECKOUT-${id} ${code} applies the correct discount`, async ({ app }) =&gt; {
+      await app.checkout.applyCoupon(code)
+      await expect(app.checkout.couponStatus).toHaveText(`${code} applied: ${code === coupons.save10 ? 10 : 20}% discount.`)
+      await expect(app.checkout.subtotal).toHaveText(formatPrice(50000))
+      await expect(app.checkout.discount).toHaveText(formatPrice(discount))
+      await expect(app.checkout.total).toHaveText(formatPrice(total))
+      await finishCheckout(app)
+      await expect(app.checkout.confirmationTotal).toHaveText(`Total: ${formatPrice(total)}`)
+    })
+  }
+
+  test(&#x27;CHECKOUT-005 successful order confirms details, clears cart, and reduces stock&#x27;, async ({ app, page }) =&gt; {
+    const number = await finishCheckout(app)
+    expect(number).toMatch(orderNumberPattern)
+    await expect(page).toHaveURL(/\/success$/)
+    await expect(app.checkout.confirmationItems).toHaveText([`${primaryProduct.name} × 1 — ${formatPrice(50000)}`])
+    await expect(app.checkout.confirmationTotal).toHaveText(`Total: ${formatPrice(50000)}`)
+    await expect(app.products.cartLink).toHaveText(&#x27;Cart (0)&#x27;)
+    await app.checkout.continueShopping()
+    await expect(app.products.product(primaryProduct.name).getByText(&#x27;In stock: 4&#x27;, { exact: true })).toBeVisible()
+    await app.products.openCart()
+    await expect(app.cart.emptyMessage).toBeVisible()
+  })
+
+  test(&#x27;CHECKOUT-006 empty coupon keeps full price&#x27;, async ({ app }) =&gt; {
+    await app.checkout.applyCoupon(&#x27;&#x27;)
+    await expect(app.checkout.couponStatus).toHaveText(&#x27;No coupon applied.&#x27;)
+    await expect(app.checkout.discount).toHaveText(formatPrice(0))
+    await expect(app.checkout.total).toHaveText(formatPrice(50000))
+  })
+
+  test(&#x27;CHECKOUT-007 malformed email blocks checkout&#x27;, async ({ app, page }) =&gt; {
+    await app.checkout.fillCustomer({ ...customer, email: &#x27;invalid-email&#x27; })
+    await app.checkout.submit()
+    expect(await app.checkout.email.evaluate(element =&gt; element.validity.typeMismatch)).toBe(true)
+    await expect(page).toHaveURL(/\/checkout$/)
+    await expect(app.products.cartLink).toHaveText(&#x27;Cart (1)&#x27;)
+  })
+
+  test(&#x27;CHECKOUT-008 editing an applied coupon removes its discount&#x27;, async ({ app }) =&gt; {
+    await app.checkout.applyCoupon(coupons.save10)
+    await expect(app.checkout.total).toHaveText(formatPrice(45000))
+    await app.checkout.couponInput.fill(coupons.invalid)
+    await expect(app.checkout.discount).toHaveText(formatPrice(0))
+    await expect(app.checkout.total).toHaveText(formatPrice(50000))
+  })
+})
+</code></pre>
+<h3 id="source-tests/orders.spec.js">tests/orders.spec.js</h3><pre><code>import { test, expect } from &#x27;../fixtures/test.js&#x27;
+import { primaryProduct, secondProduct, coupons, orderNumberPattern } from &#x27;../utils/testData.js&#x27;
+import { formatPrice } from &#x27;../utils/values.js&#x27;
+import { enterDemo, startCheckout, finishCheckout } from &#x27;../utils/flows.js&#x27;
+
+test.describe(&#x27;Order history&#x27;, () =&gt; {
+  test.beforeEach(async ({ app }) =&gt; {
+    await enterDemo(app)
+  })
+
+  test(&#x27;ORDERS-001 a placed order appears with its date, items, and final total&#x27;, async ({ app }) =&gt; {
+    await startCheckout(app)
+    await app.checkout.applyCoupon(coupons.save10)
+    const number = await finishCheckout(app)
+    expect(number).toMatch(orderNumberPattern)
+    await app.checkout.openHistory()
+    await expect(app.orders.heading).toBeVisible()
+    await expect(app.orders.orders).toHaveCount(1)
+    await expect(app.orders.order(number)).toBeVisible()
+    await expect(app.orders.items(number)).toHaveText([`${primaryProduct.name} × 1 — ${formatPrice(50000)}`])
+    await expect(app.orders.total(number)).toHaveText(`Total: ${formatPrice(45000)}`)
+    await expect(app.orders.date(number)).toHaveAttribute(&#x27;datetime&#x27;, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
+    const date = await app.orders.date(number).getAttribute(&#x27;datetime&#x27;)
+    expect(Number.isNaN(Date.parse(date))).toBe(false)
+  })
+
+  test(&#x27;ORDERS-002 multiple orders remain visible, newest first&#x27;, async ({ app }) =&gt; {
+    await startCheckout(app)
+    const first = await finishCheckout(app)
+    await app.checkout.continueShopping()
+    await startCheckout(app, secondProduct.name)
+    const second = await finishCheckout(app)
+    expect(second).not.toBe(first)
+    await app.orders.open()
+    await expect(app.orders.orders).toHaveCount(2)
+    await expect(app.orders.orders.getByRole(&#x27;heading&#x27;, { name: /^Order number:/ })).toHaveText([
+      `Order number: ${second}`, `Order number: ${first}`,
+    ])
+    await expect(app.orders.items(first)).toHaveText([`${primaryProduct.name} × 1 — ${formatPrice(50000)}`])
+    await expect(app.orders.total(first)).toHaveText(`Total: ${formatPrice(50000)}`)
+    await expect(app.orders.items(second)).toHaveText([`${secondProduct.name} × 1 — ${formatPrice(15000)}`])
+    await expect(app.orders.total(second)).toHaveText(`Total: ${formatPrice(15000)}`)
+  })
+
+  test(&#x27;ORDERS-003 a fresh test has no order history&#x27;, async ({ app }) =&gt; {
+    await app.orders.open()
+    await expect(app.orders.heading).toBeVisible()
+    await expect(app.orders.orders).toHaveCount(0)
+    await expect(app.orders.emptyMessage).toBeVisible()
+  })
+})
+</code></pre>
+<h3 id="source-reports/.gitkeep">reports/.gitkeep</h3><pre><code>(empty file)</code></pre>
+<h3 id="source-README.txt">README.txt</h3><pre><code>SPRINT 2 — PLAYWRIGHT AUTOMATION
+
+Scope
+JavaScript-only automation for the existing local React SUT. Application source is unchanged.
+No backend, telemetry, ML, healing, API mocks, or state injection is implemented.
+
+1. FOLDER STRUCTURE / FILE CREATION ORDER
+
+Create in this order:
+1) package.json, playwright.config.js, .gitignore
+2) pages/LoginPage.js, ProductsPage.js, CartPage.js, CheckoutPage.js, OrdersPage.js
+3) utils/testData.js, values.js, flows.js
+4) fixtures/test.js
+5) tests/login.spec.js, products.spec.js, cart.spec.js, checkout.spec.js, orders.spec.js
+6) reports/.gitkeep
+
+The lockfile is generated by npm and should be committed with package.json.
+
+2. ARCHITECTURE
+
+Tests express scenario expectations. Page objects own locators and user actions.
+Fixtures instantiate the five page objects on Playwright&#x27;s test-scoped page.
+Flows compose UI actions and assert navigation readiness.
+Independent test data defines expected catalog contents, rather than importing the SUT&#x27;s data.
+
+Role/label-based locators are used for interactive controls and named cards.
+Small structural locators identify unnamed currency values and semantic time elements.
+No fixed sleeps, XPath, positional nth() selectors, or network-idle waits are used.
+Playwright locator assertions retry until the expected UI appears.
+
+All tests use beforeEach hooks. Each test gets a fresh browser context and logs in via the UI.
+Only LoginPage.open() uses page.goto(&#x27;/&#x27;). Subsequent navigation uses SPA links because a
+full page load resets the SUT&#x27;s React state. Orders tests create their own order history.
+Tests do not depend on suite order and run with two local workers (one in CI).
+
+CheckoutPage also owns checkout confirmation locators/actions, keeping the requested five POMs.
+The demo login does not authenticate real credentials; the fixture uses the documented demo values.
+External Google font requests are blocked so fonts cannot slow screenshots or introduce an external
+network dependency. Application requests and application state are not mocked.
+
+3. INSTALLATION / INITIALIZATION
+
+Prerequisite: Node.js 22 or newer and npm. Run from the repository root:
+
+  npm ci --prefix frontend
+  cd automation
+  npm ci
+  npm run browsers:install
+
+This folder is already initialized. Do not run a scaffolding initializer over it.
+To recreate this framework&#x27;s package setup in an empty automation folder:
+
+  npm init -y
+  npm install --save-dev --save-exact @playwright/test@1.64.1
+  npx playwright install chromium
+
+Keep the supplied package.json (including type=module) and config when using these source files.
+On Linux CI images that lack system browser libraries, initialize with:
+
+  npx playwright install --with-deps chromium
+
+4. EXECUTION
+
+From automation/:
+
+  npm run test:list
+  npm test
+  npm run test:headed
+  npm run test:ui
+  npm run test:debug
+  npm test -- tests/products.spec.js
+  npm test -- --grep CHECKOUT-003
+  CI=true npm test
+
+By default Playwright starts and stops Vite at http://127.0.0.1:5174, leaving the usual
+application development port 5173 alone. No backend is started. Port 5174 must be free.
+Reuse is disabled to avoid silently testing a different or stale application.
+
+To test an already-running SUT instead (the config will not start Vite):
+
+  BASE_URL=http://127.0.0.1:5173 npm test
+
+BASE_URL must point to the same application, with its expected 25-product initial catalog.
+
+5. REPORTS AND FAILURE ARTIFACTS
+
+  npm run report
+  npx playwright show-trace reports/test-results/&lt;failed-test-folder&gt;/trace.zip
+
+HTML report: reports/html/index.html
+Failure screenshots/traces: reports/test-results/&lt;failed-test-folder&gt;/
+Screenshots are captured only on failures. Traces are recorded for every test and retained
+only on failures, including the first failed attempt (not only a retry).
+Local retries are disabled so failures remain visible. CI allows one retry.
+HTML reports do not open automatically. Reports and dependencies are ignored by Git.
+The normal report and result directory are replaced on subsequent runs.
+
+6. COVERAGE / VERIFICATION
+
+Expected discovery: 34 Chromium tests across 5 spec files:
+- Login: 1
+- Products: 16 (25 products, search, empty results, search reset, all 5 categories,
+  both price orders, dynamic name order, combined controls, add to cart, out-of-stock)
+- Cart: 6 (increase, decrease, remove, combined total, minimum quantity, stock maximum)
+- Checkout: 8 (required fields, invalid coupon, SAVE10, WELCOME20, order success,
+  empty coupon, invalid email, edited coupon)
+- Orders: 3 (single order, multiple newest-first orders, isolated empty history)
+
+Checks:
+1) npm run test:list discovers 34 tests without import/configuration errors.
+2) npm test passes all 34 tests without an application backend.
+3) npm run report shows all five suites and individual assertions.
+4) A failed assertion produces a PNG screenshot and trace.zip under reports/test-results.
+5) Open a trace with the command above to inspect actions, DOM snapshots, and assertions.
+
+Native HTML validation is checked through standard validity.valueMissing and typeMismatch
+properties rather than browser-language-specific popup text. Tests do not bypass validation.
+Order IDs are checked against the UUID format; order dates are validated as ISO timestamps.
+
+Design references:
+https://playwright.dev/docs/pom
+https://playwright.dev/docs/test-fixtures
+https://playwright.dev/docs/test-webserver
+https://playwright.dev/docs/test-use-options
+
+7. COMPLETED VALIDATION
+
+Chromium suite: 34 passed in 10.5 seconds, with zero retries.
+A separate intentionally failing probe confirmed both a valid PNG screenshot and a trace.zip
+containing Playwright trace data. Probe source/config files were removed after verification;
+probe artifacts remain in reports/artifact-probe-results and its separate report is in
+reports/artifact-probe-report. The main reports/html report contains the passing 34-test run.
+
+The complete source listing, folder structure, commands, and verification details are also
+available in implementation.html beside this file.
+</code></pre>
+</section><section><h2>4. Execution Commands</h2><h3>Install and initialize</h3><pre>cd /Users/chetanachark/predictive-test-app
+npm ci --prefix frontend
+cd automation
+npm ci
+npm run browsers:install</pre><p>The framework is already initialized; no scaffolding command is needed. The README includes manual initialization commands for recreating the package setup in an empty directory.</p><h3>Execute</h3><pre>npm run test:list
+npm test
+npm run test:headed
+npm run test:ui
+npm run test:debug
+npm test -- tests/products.spec.js
+npm test -- --grep CHECKOUT-003
+CI=true npm test</pre><p>By default the runner starts/stops Vite on port 5174, using a separate test server and no backend. To use an existing server explicitly:</p><pre>BASE_URL=http://127.0.0.1:5173 npm test</pre><h3>Reports and traces</h3><pre>npm run report
+npx playwright show-trace reports/test-results/&lt;failed-test-folder&gt;/trace.zip</pre><p>The main HTML report is reports/html/index.html. Failure screenshots and traces are under reports/test-results. Traces are retained on failure, including the initial failing attempt. External Google font requests are blocked by the fixture; application traffic and state are not mocked.</p></section>
+<section><h2>5. Verification Steps</h2><ol><li>Install packages and Chromium using the commands above.</li><li>Run npm run test:list and verify 34 tests in five suites.</li><li>Run npm test without a backend; verify 34 passed.</li><li>Run npm run report and inspect per-test assertions and durations.</li><li>For any failing test, inspect its screenshot and open trace.zip with Playwright Trace Viewer.</li></ol><table><tr><th>Suite</th><th>Tests</th><th>Coverage</th></tr><tr><td>Login</td><td>1</td><td>Successful demo entry</td></tr><tr><td>Products</td><td>16</td><td>Catalog, search, all categories, sorts, combined controls, cart addition, out-of-stock control</td></tr><tr><td>Cart</td><td>6</td><td>Increase/decrease, removal, combined total, minimum and maximum stock limits</td></tr><tr><td>Checkout</td><td>8</td><td>Required fields, invalid email, invalid/empty coupons, SAVE10, WELCOME20, edited coupon, successful order, stock reduction</td></tr><tr><td>Orders</td><td>3</td><td>Single order with date/items/total, multiple newest-first orders, empty isolated history</td></tr></table><p>Validation performed: all 34 passed in Chromium using two workers and no retries. The separate artifact probe deliberately failed one assertion; a valid PNG and trace archive were verified. Its temporary spec/config were removed, and its report is separate from the passing suite. No telemetry, risk scoring, ML, self-healing, backend implementation, or application feature changes were introduced.</p></section></body></html>
