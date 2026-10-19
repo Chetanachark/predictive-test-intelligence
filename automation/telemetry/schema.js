@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import { FAILURE_TYPES } from './taxonomy.js'
 
 const text = { type: 'string' }
@@ -6,14 +7,20 @@ const date = { type: 'string', format: 'date-time' }
 const uuid = { type: 'string', pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' }
 const path = { type: ['string', 'null'], pattern: '^artifacts/[A-Za-z0-9_./-]+$' }
 const statuses = ['PASS', 'FAIL', 'TIMED_OUT', 'SKIPPED', 'INTERRUPTED']
+export const LEGACY_SCHEMA = JSON.parse(fs.readFileSync(new URL('./record.v1.schema.json', import.meta.url), 'utf8'))
+export const LEGACY_COLUMNS = Object.freeze([...LEGACY_SCHEMA.required])
+export const EXPERIMENT_DEFAULTS = Object.freeze({
+  fault_type: '', emulated: false, injected_at: null, mutation_version: '',
+  expected_failure_type: null, injection_verified: false,
+})
 
 export const RECORD_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
-  title: 'Playwright execution telemetry v1',
+  title: 'Playwright execution telemetry v2',
   type: 'object',
   additionalProperties: false,
   properties: {
-    schema_version: { const: 1 },
+    schema_version: { const: 2 },
     record_type: { enum: ['TEST_ATTEMPT', 'RUN_ERROR'] },
     run_id: uuid,
     attempt_id: uuid,
@@ -48,6 +55,12 @@ export const RECORD_SCHEMA = {
     fault_variant: text,
     experiment_id: text,
     scenario_variant: text,
+    fault_type: text,
+    emulated: { type: 'boolean' },
+    injected_at: { type: ['string', 'null'], format: 'date-time' },
+    mutation_version: text,
+    expected_failure_type: { enum: [null, ...FAILURE_TYPES] },
+    injection_verified: { type: 'boolean' },
     expected_status: { enum: statuses },
     classification_source: { enum: ['NONE', 'ANNOTATION', 'HEURISTIC', 'UNKNOWN'] },
     failure_phase: { enum: ['test', 'setup', 'teardown', 'run'] },
@@ -94,7 +107,7 @@ function validateValue(value, schema, name) {
 }
 
 export function validateRecord(record) {
-  validateValue(record, RECORD_SCHEMA, 'record')
+  validateValue(record, record?.schema_version === 1 ? LEGACY_SCHEMA : RECORD_SCHEMA, 'record')
   const successful = ['PASS', 'SKIPPED'].includes(record.status)
   if (successful !== (record.failure_type === null)) throw new Error('status and failure_type are inconsistent')
   if ((record.failure_type === null) !== (record.classification_source === 'NONE')) throw new Error('classification_source is inconsistent')
@@ -110,6 +123,12 @@ export function validateRecord(record) {
   if (record.record_type === 'RUN_ERROR' && (record.test_id !== '__RUN__' || record.failure_phase !== 'run')) {
     throw new Error('RUN_ERROR must use the run-level identity and phase')
   }
+  if (record.schema_version === 2) {
+    if (record.injection_verified && (!record.emulated || !record.injected_at || !record.experiment_id || !record.mutation_version)) {
+      throw new Error('Verified emulated injections require experiment ID, mutation version, and injection time')
+    }
+    if (record.injected_at && !record.emulated) throw new Error('injected_at requires emulated=true')
+  }
   // Environment and notes must remain serializable and reproducible in CSV.
   JSON.stringify(record)
   return record
@@ -124,4 +143,9 @@ export function validateHistory(records) {
     ids.add(record.attempt_id)
   }
   return records
+}
+
+export function upgradeRecord(record) {
+  validateRecord(record)
+  return record.schema_version === 2 ? record : validateRecord({ ...record, schema_version: 2, ...EXPERIMENT_DEFAULTS })
 }

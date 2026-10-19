@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Playwright execution telemetry v1",
+  "title": "Playwright execution telemetry v2",
   "type": "object",
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "const": 1
+      "const": 2
     },
     "record_type": {
       "enum": [
@@ -171,6 +171,38 @@
     "scenario_variant": {
       "type": "string"
     },
+    "fault_type": {
+      "type": "string"
+    },
+    "emulated": {
+      "type": "boolean"
+    },
+    "injected_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "mutation_version": {
+      "type": "string"
+    },
+    "expected_failure_type": {
+      "enum": [
+        null,
+        "LOCATOR_NOT_FOUND",
+        "LOCATOR_AMBIGUOUS",
+        "ACTIONABILITY_FAILURE",
+        "ASSERTION_MISMATCH",
+        "STATE_CONSISTENCY_FAILURE",
+        "APPLICATION_RUNTIME_ERROR",
+        "SETUP_ENVIRONMENT_FAILURE",
+        "UNKNOWN"
+      ]
+    },
+    "injection_verified": {
+      "type": "boolean"
+    },
     "expected_status": {
       "enum": [
         "PASS",
@@ -249,6 +281,12 @@
     "fault_variant",
     "experiment_id",
     "scenario_variant",
+    "fault_type",
+    "emulated",
+    "injected_at",
+    "mutation_version",
+    "expected_failure_type",
+    "injection_verified",
     "expected_status",
     "classification_source",
     "failure_phase",

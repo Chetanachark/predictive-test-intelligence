@@ -9,7 +9,10 @@ import { execFileSync } from 'node:child_process'
 const require = createRequire(import.meta.url)
 export const AUTOMATION_ROOT = fileURLToPath(new URL('..', import.meta.url))
 export const PROJECT_ROOT = path.dirname(AUTOMATION_ROOT)
-export const EXPERIMENT_FIELDS = Object.freeze(['locator_mutation', 'fault_variant', 'experiment_id', 'scenario_variant'])
+export const EXPERIMENT_FIELDS = Object.freeze([
+  'locator_mutation', 'fault_variant', 'experiment_id', 'scenario_variant',
+  'fault_type', 'emulated', 'injected_at', 'mutation_version', 'expected_failure_type', 'injection_verified',
+])
 
 function sourceHash(root, entries) {
   const hash = createHash('sha256')
@@ -34,7 +37,7 @@ export function createRunMetadata(config) {
     run_id: randomUUID(),
     timestamp: new Date().toISOString(),
     app_version: `${appPackage.version}+sha256:${sourceHash(path.join(PROJECT_ROOT, 'frontend'), ['src', 'package.json', 'package-lock.json', 'vite.config.js', 'index.html', 'public'])}`,
-    test_version: `${automationPackage.version}+sha256:${sourceHash(AUTOMATION_ROOT, ['pages', 'tests', 'fixtures', 'utils', 'telemetry', 'playwright.config.js', 'package.json', 'package-lock.json'])}`,
+    test_version: `${automationPackage.version}+sha256:${sourceHash(AUTOMATION_ROOT, ['pages', 'tests', 'fixtures', 'utils', 'telemetry', 'experiments', 'playwright.config.js', 'package.json', 'package-lock.json'])}`,
     framework_version: automationPackage.version,
     playwright_version: require('@playwright/test/package.json').version,
     environment: {
@@ -60,7 +63,14 @@ export function describePath(test) {
 }
 
 export function experimentMetadata(annotations = []) {
-  return Object.fromEntries(EXPERIMENT_FIELDS.map(field => [field,
+  const result = Object.fromEntries(EXPERIMENT_FIELDS.map(field => [field,
     annotations.findLast(annotation => annotation.type === field)?.description ?? process.env[field.toUpperCase()] ?? '',
   ]))
+  for (const key of ['emulated', 'injection_verified']) {
+    if (!['', 'true', 'false'].includes(result[key])) throw new Error(`${key} must be true or false`)
+    result[key] = result[key] === 'true'
+  }
+  result.injected_at ||= null
+  result.expected_failure_type ||= null
+  return result
 }

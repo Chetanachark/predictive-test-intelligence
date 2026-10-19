@@ -15,7 +15,13 @@
     "report": "playwright show-report reports/html",
     "browsers:install": "playwright install chromium",
     "test:telemetry": "node --test telemetry/telemetry.test.js",
-    "telemetry:validate": "node telemetry/validate-history.js"
+    "telemetry:validate": "node telemetry/validate-history.js",
+    "telemetry:migrate": "node telemetry/migrate-history.js",
+    "experiments": "node experiments/run.js",
+    "experiments:list": "playwright test --config experiments/playwright.config.js --list",
+    "experiments:inspect": "node experiments/inspect.js",
+    "experiments:report": "playwright show-report reports/experiments/html",
+    "test:experiments": "node --test experiments/experiment.test.js"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1"

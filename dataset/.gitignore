@@ -1,0 +1,8 @@
+execution-history.json
+test-history.csv
+.history-*
+artifacts/
+runs/
+*.tmp
+migrations/
+campaigns/

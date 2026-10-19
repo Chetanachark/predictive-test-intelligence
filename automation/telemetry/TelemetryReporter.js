@@ -122,7 +122,7 @@ export default class TelemetryReporter {
       const project = test.parent.project()
       const start = result.startTime.toISOString()
       const row = {
-        schema_version: 1, record_type: 'TEST_ATTEMPT',
+        schema_version: 2, record_type: 'TEST_ATTEMPT',
         ...this.metadata,
         attempt_id: attempt.id,
         test_id: testIdentity(test), test_name: test.title,
@@ -160,7 +160,7 @@ export default class TelemetryReporter {
       this.ensureRun()
       const time = new Date().toISOString()
       const row = {
-        schema_version: 1, record_type: 'RUN_ERROR', ...this.metadata,
+        schema_version: 2, record_type: 'RUN_ERROR', ...this.metadata,
         attempt_id: randomUUID(), test_id: '__RUN__', test_name: 'Run-level error', suite_name: 'Run lifecycle',
         browser: 'runner', status: 'FAIL', failure_type: 'SETUP_ENVIRONMENT_FAILURE',
         duration_ms: 0, retry_count: 0, start_time: time, end_time: time,

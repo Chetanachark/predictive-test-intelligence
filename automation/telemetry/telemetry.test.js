@@ -16,12 +16,12 @@ import { createRunMetadata, testIdentity, experimentMetadata } from './metadata.
 const metadata = createRunMetadata({ workers: 2 })
 function record(overrides = {}) {
   return {
-    schema_version: 1, record_type: 'TEST_ATTEMPT', ...metadata,
+    schema_version: 2, record_type: 'TEST_ATTEMPT', ...metadata,
     attempt_id: randomUUID(), test_id: 'TEST-001', test_name: 'TEST-001 sample', suite_name: 'Telemetry', browser: 'chromium',
     status: 'PASS', failure_type: null, duration_ms: 5, retry_count: 0,
     start_time: '2026-10-19T10:00:00.000Z', end_time: '2026-10-19T10:00:00.005Z',
     trace_path: null, screenshot_path: null, notes: '',
-    locator_mutation: '', fault_variant: '', experiment_id: '', scenario_variant: '',
+    ...experimentMetadata(),
     expected_status: 'PASS', classification_source: 'NONE', failure_phase: 'test', error_message: '', error_stack: '',
     runtime_errors: [], project_name: 'chromium', worker_index: 0, repeat_index: 0,
     ...overrides,

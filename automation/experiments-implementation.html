@@ -1,0 +1,3015 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sprint 4 — Controlled Failure Framework</title><style>body{max-width:1180px;margin:40px auto;padding:0 24px;font:16px/1.65 system-ui,sans-serif;color:#1c2940}h1,h2,h3{line-height:1.3}pre{background:#f1f4f9;padding:20px;border-radius:8px;overflow:auto;font:13px/1.6 ui-monospace,monospace}section{margin:36px 0}a{color:#2856c6}li{margin:7px 0}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccd3df;padding:10px;text-align:left;vertical-align:top}.status{background:#eaf6ed;padding:18px;border-radius:8px}summary{cursor:pointer;font-weight:600;padding:12px}details{margin:12px 0}</style></head><body>
+<h1>Sprint 4 — Controlled Failure Framework</h1><p>Predictive Test Intelligence and Adaptive Self-Healing Framework for Playwright-Based Web Test Automation Using Machine Learning</p>
+<p class="status">Delivered: 15 versioned cases (6 healthy controls, 9 faults). Two verified campaigns produced 45 accepted observations (18 PASS, 27 FAIL). All five required failure categories were observed. The original 34 E2E tests passed after experiments. Application source is unchanged.</p>
+<section><h2>1. Folder Structure</h2><pre>automation/experiments/
+├── baseline/baseline.spec.js
+├── locator-mutation/locator.spec.js
+├── assertion-mutation/assertion.spec.js
+├── state-mutation/state.spec.js
+├── timeout-mutation/actionability.spec.js
+├── registry.js
+├── injector.js
+├── fixtures.js
+├── campaign.js
+├── run.js
+├── inspect.js
+├── experiment.test.js
+├── playwright.config.js
+└── README.md
+
+automation/telemetry/
+├── record.v1.schema.json       preserved legacy schema
+├── migrate-history.js         backed-up, idempotent migration
+└── existing modules           updated for schema v2
+
+dataset/
+├── execution-history.json
+├── test-history.csv
+├── migrations/&lt;id&gt;/          byte-for-byte v1 backups
+├── campaigns/&lt;id&gt;/campaign.json
+├── campaigns/latest.json      most recent verified campaign
+├── artifacts/&lt;run&gt;/&lt;attempt&gt;/
+└── experiment-examples/        representative valid v2 rows and artifacts</pre></section>
+<section><h2>2. Files To Create</h2><ul>
+<li><a href="#source-automation/experiments/README.md">automation/experiments/README.md</a></li>
+<li><a href="#source-automation/experiments/assertion-mutation/assertion.spec.js">automation/experiments/assertion-mutation/assertion.spec.js</a></li>
+<li><a href="#source-automation/experiments/baseline/baseline.spec.js">automation/experiments/baseline/baseline.spec.js</a></li>
+<li><a href="#source-automation/experiments/campaign.js">automation/experiments/campaign.js</a></li>
+<li><a href="#source-automation/experiments/experiment.test.js">automation/experiments/experiment.test.js</a></li>
+<li><a href="#source-automation/experiments/fixtures.js">automation/experiments/fixtures.js</a></li>
+<li><a href="#source-automation/experiments/injector.js">automation/experiments/injector.js</a></li>
+<li><a href="#source-automation/experiments/inspect.js">automation/experiments/inspect.js</a></li>
+<li><a href="#source-automation/experiments/locator-mutation/locator.spec.js">automation/experiments/locator-mutation/locator.spec.js</a></li>
+<li><a href="#source-automation/experiments/playwright.config.js">automation/experiments/playwright.config.js</a></li>
+<li><a href="#source-automation/experiments/registry.js">automation/experiments/registry.js</a></li>
+<li><a href="#source-automation/experiments/run.js">automation/experiments/run.js</a></li>
+<li><a href="#source-automation/experiments/state-mutation/state.spec.js">automation/experiments/state-mutation/state.spec.js</a></li>
+<li><a href="#source-automation/experiments/timeout-mutation/actionability.spec.js">automation/experiments/timeout-mutation/actionability.spec.js</a></li>
+<li><a href="#source-automation/telemetry/record.v1.schema.json">automation/telemetry/record.v1.schema.json</a></li>
+<li><a href="#source-automation/telemetry/migrate-history.js">automation/telemetry/migrate-history.js</a></li>
+</ul></section><section><h2>3. Files To Modify</h2><ul>
+<li><a href="#source-automation/package.json">automation/package.json</a></li>
+<li><a href="#source-automation/telemetry/schema.js">automation/telemetry/schema.js</a></li>
+<li><a href="#source-automation/telemetry/record.schema.json">automation/telemetry/record.schema.json</a></li>
+<li><a href="#source-automation/telemetry/metadata.js">automation/telemetry/metadata.js</a></li>
+<li><a href="#source-automation/telemetry/TelemetryReporter.js">automation/telemetry/TelemetryReporter.js</a></li>
+<li><a href="#source-automation/telemetry/history.js">automation/telemetry/history.js</a></li>
+<li><a href="#source-automation/telemetry/telemetry.test.js">automation/telemetry/telemetry.test.js</a></li>
+<li><a href="#source-automation/telemetry-README.txt">automation/telemetry-README.txt</a></li>
+<li><a href="#source-dataset/.gitignore">dataset/.gitignore</a></li>
+</ul><p>The frontend, original E2E specs, and page objects were not modified. No package dependency was added.</p></section>
+<section><h2>4. Complete Code</h2><p>Expand any file for its exact complete contents. The README provides the full experiment protocol and research limitations.</p>
+<details id="source-automation/experiments/README.md"><summary>automation/experiments/README.md</summary><pre><code># Sprint 4 — Controlled Failure Framework
+
+This suite generates **emulated, reproducible failures** for research. It does not implement risk scoring, recommendations, self-healing, ML, or a dashboard. It adds no application features or package dependencies.
+
+## Architecture and files
+
+```text
+experiments/
+├── baseline/baseline.spec.js
+├── locator-mutation/locator.spec.js
+├── assertion-mutation/assertion.spec.js
+├── state-mutation/state.spec.js
+├── timeout-mutation/actionability.spec.js
+├── registry.js
+├── injector.js
+├── fixtures.js
+├── campaign.js
+├── run.js
+├── inspect.js
+├── experiment.test.js
+├── playwright.config.js
+└── README.md
+```
+
+- `registry.js` defines immutable major-version experiment IDs, patch-version mutation recipes, expected observation types, and exact source anchors.
+- `injector.js` applies one fault per isolated page and records evidence. Missing or duplicated source anchors fail closed.
+- `fixtures.js` extends the existing POM fixture. Every attempt gets a fresh browser context.
+- `campaign.js` audits **observed** telemetry against the independently specified experiment protocol.
+- `run.js` orchestrates a campaign, retains a manifest, and verifies source fingerprints before/after execution.
+- `inspect.js` queries historical data and can restrict analysis to verified campaigns.
+
+Normal `npm test` continues to run the original 34 E2E tests. Experiments have their own config, HTML report, and Playwright result directory. Both append to the existing historical dataset unless `TELEMETRY_DIR` selects another location.
+
+## Versioned mutation matrix
+
+All released recipes in this implementation use mutation version **1.0.1**, with stable major-version IDs ending in `-v1`. Preserve released recipes; add a new version instead of silently changing their meaning. The source fingerprint records the exact framework and experiment code.
+
+| Experiment | Controlled change | Observed failure required |
+|---|---|---|
+| S4-LOC-001-v1 | Rename the actual checkout link&#x27;s accessible text | LOCATOR_NOT_FOUND |
+| S4-LOC-002-v1 | Clone the actual checkout link | LOCATOR_AMBIGUOUS |
+| S4-ASSERT-001-v1 | SAVE10 rate becomes 5% instead of 10% | ASSERTION_MISMATCH |
+| S4-STATE-001-v1 | Completed order leaves stock unchanged | STATE_CONSISTENCY_FAILURE |
+| S4-STATE-002-v1 | Completed order leaves cart unchanged | STATE_CONSISTENCY_FAILURE |
+| S4-STATE-003-v1 | Persisted order total has an extra INR 1,000 | STATE_CONSISTENCY_FAILURE |
+| S4-ACTION-001-v1 | Submit control is not rendered for 30 seconds | ACTIONABILITY_FAILURE |
+| S4-ACTION-002-v1 | Submit control remains hidden | ACTIONABILITY_FAILURE |
+| S4-ACTION-003-v1 | Submit control is disabled | ACTIONABILITY_FAILURE |
+
+Six healthy controls cover checkout navigation, SAVE10 calculation, stock reduction, cart clearing, order totals, and submit actionability. `scenario_variant` links a control to its corresponding fault scenario.
+
+The application uses accessible role/name locators, not a `checkout-btn` ID. Therefore, changing an unused ID would not be a valid locator-failure experiment. The locator cases mutate the real accessible name or matching cardinality.
+
+## Reversibility and business-defect injection
+
+No frontend file is edited. Locator/actionability experiments change only the isolated browser DOM. Coupon and state experiments intercept the Vite response for `/src/context/shopState.js` and patch its JavaScript in that browser, before module execution. This changes actual business calculations/state transitions rather than merely falsifying displayed text or changing the expected test result.
+
+Patches accept the documented raw/Vite-normalized forms and require exactly one anchor. Evidence records original/mutated module SHA-256 hashes, anchor, replacement, version, and the observed consequence. Patch behavior is also tested directly against the business module in Node.
+
+Browser-context closure discards DOM mutations, routes, timers, module instances, and React state. Faults remain present until screenshots/traces are captured. Subsequent healthy tests verify isolation. The runner also rejects a campaign if application/framework source fingerprints change during execution.
+
+For hidden/delayed controls, an explicit role locator with `includeHidden: true` isolates **actionability** from role-locator visibility filtering. A normal role locator may instead report an unresolved locator for a hidden element. The delayed control remains in the DOM but is not rendered until after 30 seconds; its click budget is 500 ms. This tests delayed visibility, not a new asynchronous business feature. No arbitrary sleep is added to the tests.
+
+## Telemetry schema v2
+
+Existing required fields and the frozen eight-category failure taxonomy are retained. New required fields:
+
+| Field | Type | Meaning |
+|---|---|---|
+| fault_type | string | Injected mechanism, such as COUPON_RATE_DEFECT or HIDDEN_CONTROL |
+| emulated | boolean | Whether an emulated mutation is configured |
+| injected_at | UTC timestamp or null | Time the mutation was applied, not simply scheduled |
+| mutation_version | string | Pinned recipe patch version |
+| expected_failure_type | category or null | Protocol expectation; never used to overwrite observed failure_type |
+| injection_verified | boolean | Whether its actual DOM/business consequence was independently checked |
+
+Existing `experiment_id`, `fault_variant`, `locator_mutation`, and `scenario_variant` fields remain available. Typed annotations override environment defaults. Healthy controls have `emulated=false`, `injected_at=null`, `injection_verified=false`, and no expected failure type.
+
+The reporter&#x27;s classification is independent of the injected mechanism. State inconsistency is explicitly researcher-labeled **only after a verified mutation causes the selected original state invariant assertion to fail**. Other failures use normal telemetry classification. Incorrect input rejected as expected remains PASS.
+
+Schema migration creates byte-for-byte v1 JSON/CSV backups under `dataset/migrations/&lt;id&gt;/`, preserves all original values except the schema-version marker, adds defaults, and atomically republishes synchronized v2 history through the existing journal. It is idempotent. Migration cannot retrospectively establish missing fault provenance: legacy `emulated=false` is a backfilled default, not proof of a naturally occurring execution. The original backups and revision metadata remain available.
+
+## Execution commands
+
+Run from `automation/`:
+
+```bash
+npm run telemetry:migrate
+npm run test:telemetry
+npm run test:experiments
+npm run experiments:list
+npm run experiments
+npm run telemetry:validate
+npm run experiments:report
+```
+
+The campaign runner performs migration automatically if needed. No additional npm package installation is required.
+
+Select one fault family (healthy controls are still included):
+
+```bash
+npm run experiments -- --group locator-mutation
+npm run experiments -- --group assertion-mutation
+npm run experiments -- --group state-mutation
+npm run experiments -- --group timeout-mutation
+npm run experiments -- --group baseline
+```
+
+Repeat each case with fresh state:
+
+```bash
+npm run experiments -- --repeat 2
+```
+
+For a separate study directory:
+
+```bash
+TELEMETRY_DIR=/absolute/path/to/study npm run experiments
+TELEMETRY_DIR=/absolute/path/to/study npm run experiments:inspect -- --latest-campaign
+```
+
+Only point this suite at this project&#x27;s Vite development SUT. Response-mutation cases intentionally reject a build/server that does not expose the expected module. No backend is used.
+
+## Interpreting results
+
+A full single-repetition campaign should record:
+
+| Observation | Count |
+|---|---:|
+| Healthy PASS | 6 |
+| Injected FAIL | 9 |
+| LOCATOR_NOT_FOUND | 1 |
+| LOCATOR_AMBIGUOUS | 1 |
+| ASSERTION_MISMATCH | 1 |
+| STATE_CONSISTENCY_FAILURE | 3 |
+| ACTIONABILITY_FAILURE | 3 |
+
+The underlying Playwright process should exit **1** because healthy oracles detected nine injected defects. Tests are not marked with `test.fail()`, skipped, or caught and converted into PASS. The campaign command exits **0 only when its separate audit confirms exactly the required observations**. This is campaign verification success, not fifteen passing E2E tests.
+
+Missing/unconfirmed injections, surviving mutations, setup failures, wrong categories, unexpected attempts, missing artifacts, retries, and unexpected process termination invalidate the campaign. Raw rows remain in history; the immutable campaign manifest records INVALID. Such rows must not be quietly relabeled or included as successful fault experiments.
+
+Manifests live under `dataset/campaigns/&lt;campaign_id&gt;/campaign.json`. `latest.json` points to the most recent verified campaign. Use the verified-campaign queries below instead of treating every historical development attempt as an accepted research observation. The initial development campaign was rejected because two Vite source anchors did not match and button CSS overrode `hidden`; those records and its INVALID manifest were retained. Recipe 1.0.1 corrects these mechanics.
+
+## Validation and dataset inspection
+
+```bash
+# Full history: schema, CSV synchronization and artifact existence
+npm run telemetry:validate
+
+# Most recent verified campaign
+npm run experiments:inspect -- --latest-campaign
+
+# Accepted observations across all verified campaigns only
+npm run experiments:inspect -- --verified-campaigns
+
+# Further filters can be combined
+npm run experiments:inspect -- --verified-campaigns --status FAIL
+npm run experiments:inspect -- --verified-campaigns --failure-type LOCATOR_AMBIGUOUS
+npm run experiments:inspect -- --experiment S4-STATE-001-v1
+npm run experiments:inspect -- --run-id RUN_UUID
+
+# Confirm the unmodified application still passes after fault execution
+npm test
+```
+
+Check expected counts, one attempt per case/repetition, independent observed failure types, `injection_verified=true` for injected faults, and archived screenshots/traces. The normal report is under `reports/html`; the separate experiment report is under `reports/experiments/html`.
+
+Reproducibility means the same versioned fault produces the same specified observation from a fresh state. UUIDs, order numbers, timestamps, and execution durations naturally differ.
+
+## Research limits
+
+These are controlled emulations in one SUT, not evidence of production failure prevalence or generalization. Repeating the same mutation does not create independent fault mechanisms. Retain raw evidence, exclude invalid campaigns, and group repeated variants appropriately in any later evaluation. Expected fault types, injected mechanism, experiment identity, injection verification, and other post-execution labels must not leak into a future pre-execution predictor.
+
+No risk engine, recommendations, healing, or ML is included in this sprint.
+</code></pre></details>
+<details id="source-automation/experiments/assertion-mutation/assertion.spec.js"><summary>automation/experiments/assertion-mutation/assertion.spec.js</summary><pre><code>import { test, expect } from &#x27;../fixtures.js&#x27;
+import { enterDemo, startCheckout } from &#x27;../../utils/flows.js&#x27;
+import { formatPrice } from &#x27;../../utils/values.js&#x27;
+
+test.use({ mutation: &#x27;S4-ASSERT-001-v1&#x27; })
+test(&#x27;EXPASSERT-001 SAVE10 business oracle detects the emulated five-percent defect&#x27;, async ({ app, fault }) =&gt; {
+  await enterDemo(app)
+  await startCheckout(app)
+  await app.checkout.applyCoupon(&#x27;SAVE10&#x27;)
+  // Confirm the served module mutation actually affected business behavior.
+  await expect(app.checkout.discount).toHaveText(formatPrice(2500))
+  await fault.confirm(&#x27;SAVE10 produced 2500 discount on a 50000 subtotal (5%).&#x27;)
+  // Original healthy expectation remains 10%, not a deliberately incorrect test expectation.
+  await expect(app.checkout.discount).toHaveText(formatPrice(5000))
+})
+</code></pre></details>
+<details id="source-automation/experiments/baseline/baseline.spec.js"><summary>automation/experiments/baseline/baseline.spec.js</summary><pre><code>import { test, expect } from &#x27;../fixtures.js&#x27;
+import { enterDemo, startCheckout, finishCheckout } from &#x27;../../utils/flows.js&#x27;
+import { formatPrice } from &#x27;../../utils/values.js&#x27;
+import { customer } from &#x27;../../utils/testData.js&#x27;
+
+for (const [number, scenario] of [
+  [&#x27;001&#x27;, &#x27;checkout-navigation&#x27;], [&#x27;002&#x27;, &#x27;coupon-save10&#x27;], [&#x27;003&#x27;, &#x27;stock-after-order&#x27;],
+  [&#x27;004&#x27;, &#x27;cart-after-order&#x27;], [&#x27;005&#x27;, &#x27;order-total&#x27;], [&#x27;006&#x27;, &#x27;checkout-action&#x27;],
+]) {
+  test.describe(`Healthy ${scenario}`, () =&gt; {
+    test.use({ mutation: `S4-BASE-${number}-v1` })
+    test(`EXPBASE-${number} healthy ${scenario}`, async ({ app, page }) =&gt; {
+      await enterDemo(app)
+      if (scenario === &#x27;checkout-navigation&#x27;) {
+        await app.products.addToCart(&#x27;Laptop&#x27;)
+        await app.products.openCart()
+        await app.cart.openCheckout()
+        await expect(app.checkout.heading).toBeVisible()
+        return
+      }
+      await startCheckout(app)
+      if (scenario === &#x27;coupon-save10&#x27;) {
+        await app.checkout.applyCoupon(&#x27;SAVE10&#x27;)
+        await expect(app.checkout.discount).toHaveText(formatPrice(5000))
+        await expect(app.checkout.total).toHaveText(formatPrice(45000))
+        return
+      }
+      if (scenario === &#x27;checkout-action&#x27;) {
+        await app.checkout.fillCustomer(customer)
+        await page.getByRole(&#x27;button&#x27;, { name: &#x27;Place order&#x27;, exact: true, includeHidden: true }).click()
+        await expect(app.checkout.successMessage).toBeVisible()
+        return
+      }
+      await finishCheckout(app)
+      if (scenario === &#x27;stock-after-order&#x27;) {
+        await app.checkout.continueShopping()
+        await expect(app.products.product(&#x27;Laptop&#x27;).getByText(&#x27;In stock: 4&#x27;, { exact: true })).toBeVisible()
+      } else if (scenario === &#x27;cart-after-order&#x27;) {
+        await expect(app.products.cartLink).toHaveText(&#x27;Cart (0)&#x27;)
+      } else {
+        await expect(app.checkout.confirmationTotal).toHaveText(`Total: ${formatPrice(50000)}`)
+      }
+    })
+  })
+}
+</code></pre></details>
+<details id="source-automation/experiments/campaign.js"><summary>automation/experiments/campaign.js</summary><pre><code>import assert from &#x27;node:assert/strict&#x27;
+
+export function validateCampaign(rows, definitions, repetitions = 1) {
+  assert.equal(rows.length, definitions.length * repetitions, &#x27;Missing or unexpected campaign attempt rows&#x27;)
+  assert.equal(new Set(rows.map(row =&gt; row.run_id)).size, 1, &#x27;A campaign must correspond to one Playwright run&#x27;)
+  assert.equal(new Set(rows.map(row =&gt; row.attempt_id)).size, rows.length, &#x27;Duplicate attempt identity&#x27;)
+  const counts = { PASS: 0, FAIL: 0 }
+  for (const definition of definitions) {
+    const attempts = rows.filter(row =&gt; row.experiment_id === definition.id)
+    assert.equal(attempts.length, repetitions, `${definition.id}: unexpected attempt count`)
+    assert.deepEqual(attempts.map(row =&gt; row.repeat_index).sort((a, b) =&gt; a - b), Array.from({ length: repetitions }, (_, index) =&gt; index))
+    for (const row of attempts) {
+      assert.equal(row.record_type, &#x27;TEST_ATTEMPT&#x27;)
+      assert.equal(row.test_id, definition.testId)
+      assert.equal(row.expected_status, &#x27;PASS&#x27;, &#x27;Do not suppress injected failures with test.fail()&#x27;)
+      assert.equal(row.retry_count, 0, &#x27;Campaign retries must stay disabled&#x27;)
+      assert.equal(row.fault_variant, definition.variant)
+      assert.equal(row.fault_type, definition.faultType)
+      assert.equal(row.mutation_version, definition.version)
+      assert.equal(row.scenario_variant, definition.scenario)
+      assert.equal(row.expected_failure_type, definition.expected)
+      if (!definition.expected) {
+        assert.equal(row.status, &#x27;PASS&#x27;, `${definition.id}: healthy control failed`)
+        assert.equal(row.failure_type, null)
+        assert.equal(row.emulated, false)
+        assert.equal(row.injected_at, null)
+        assert.equal(row.injection_verified, false)
+      } else {
+        assert.equal(row.status, &#x27;FAIL&#x27;, `${definition.id}: mutation survived or execution did not reach its oracle`)
+        assert.equal(row.failure_type, definition.expected, `${definition.id}: wrong observed failure category`)
+        assert.equal(row.failure_phase, &#x27;test&#x27;, &#x27;Setup failures are not successful mutation observations&#x27;)
+        assert.equal(row.emulated, true)
+        assert.equal(row.injection_verified, true, `${definition.id}: injection was not independently confirmed`)
+        assert.ok(row.injected_at)
+        assert.ok(row.trace_path &amp;&amp; row.screenshot_path, &#x27;Failure evidence missing&#x27;)
+        if (definition.kind === &#x27;source&#x27;) assert.match(row.notes, /mutated_sha256/)
+        counts[row.failure_type] = (counts[row.failure_type] ?? 0) + 1
+      }
+      counts[row.status]++
+    }
+  }
+  return counts
+}
+</code></pre></details>
+<details id="source-automation/experiments/experiment.test.js"><summary>automation/experiments/experiment.test.js</summary><pre><code>import test from &#x27;node:test&#x27;
+import assert from &#x27;node:assert/strict&#x27;
+import fs from &#x27;node:fs&#x27;
+import os from &#x27;node:os&#x27;
+import path from &#x27;node:path&#x27;
+import { randomUUID } from &#x27;node:crypto&#x27;
+import { spawnSync } from &#x27;node:child_process&#x27;
+import { EXPERIMENTS, experimentById, mutateSource } from &#x27;./registry.js&#x27;
+import { validateCampaign } from &#x27;./campaign.js&#x27;
+import { createRunMetadata, experimentMetadata } from &#x27;../telemetry/metadata.js&#x27;
+import { HistoryStore, serializeCSV } from &#x27;../telemetry/history.js&#x27;
+import { validateRecord, upgradeRecord } from &#x27;../telemetry/schema.js&#x27;
+
+const appModule = new URL(&#x27;../../frontend/src/context/shopState.js&#x27;, import.meta.url)
+const productModule = new URL(&#x27;../../frontend/src/data/products.js&#x27;, import.meta.url)
+const original = fs.readFileSync(appModule, &#x27;utf8&#x27;)
+const metadata = createRunMetadata({ workers: 1 })
+
+function legacyRecord() {
+  return {
+    schema_version: 1, record_type: &#x27;TEST_ATTEMPT&#x27;, ...metadata,
+    attempt_id: randomUUID(), test_id: &#x27;TEST-001&#x27;, test_name: &#x27;TEST-001 legacy&#x27;, suite_name: &#x27;Legacy&#x27;, browser: &#x27;chromium&#x27;,
+    status: &#x27;PASS&#x27;, failure_type: null, duration_ms: 5, retry_count: 0,
+    start_time: &#x27;2026-10-19T10:00:00.000Z&#x27;, end_time: &#x27;2026-10-19T10:00:00.005Z&#x27;,
+    trace_path: null, screenshot_path: null, notes: &#x27;&#x27;, locator_mutation: &#x27;&#x27;, fault_variant: &#x27;&#x27;, experiment_id: &#x27;&#x27;, scenario_variant: &#x27;&#x27;,
+    expected_status: &#x27;PASS&#x27;, classification_source: &#x27;NONE&#x27;, failure_phase: &#x27;test&#x27;, error_message: &#x27;&#x27;, error_stack: &#x27;&#x27;,
+    runtime_errors: [], project_name: &#x27;chromium&#x27;, worker_index: 0, repeat_index: 0,
+  }
+}
+function temporary(t) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), &#x27;sut-experiments-&#x27;))
+  t.after(() =&gt; fs.rmSync(directory, { recursive: true, force: true }))
+  return directory
+}
+
+test(&#x27;registry is frozen, uniquely versioned, and includes six controls and nine faults&#x27;, () =&gt; {
+  assert.ok(Object.isFrozen(EXPERIMENTS))
+  assert.ok(EXPERIMENTS.every(Object.isFrozen))
+  assert.equal(EXPERIMENTS.length, 15)
+  assert.equal(new Set(EXPERIMENTS.map(item =&gt; item.id)).size, 15)
+  assert.equal(new Set(EXPERIMENTS.map(item =&gt; item.testId)).size, 15)
+  assert.equal(EXPERIMENTS.filter(item =&gt; item.kind === &#x27;none&#x27;).length, 6)
+  assert.equal(EXPERIMENTS.filter(item =&gt; item.expected).length, 9)
+  assert.throws(() =&gt; experimentById(&#x27;unknown&#x27;), /Unknown/)
+})
+
+for (const definition of EXPERIMENTS.filter(item =&gt; item.kind === &#x27;source&#x27;)) {
+  test(`${definition.id}: source patch creates the specified business defect without writing the SUT`, async () =&gt; {
+    const patched = mutateSource(definition, original)
+    assert.notEqual(patched, original)
+    const syntax = spawnSync(process.execPath, [&#x27;--check&#x27;, &#x27;--input-type=module&#x27;], { input: patched, encoding: &#x27;utf8&#x27; })
+    assert.equal(syntax.status, 0, syntax.stderr)
+    const absoluteImports = patched.replace(&quot;&#x27;../data/products.js&#x27;&quot;, JSON.stringify(productModule.href))
+    const module = await import(`data:text/javascript;base64,${Buffer.from(absoluteImports).toString(&#x27;base64&#x27;)}`)
+    let state = module.createShopState()
+    state = module.updateCart(state, { type: &#x27;add&#x27;, id: 1 })
+    const next = module.completeOrder(state, { name: &#x27;Student&#x27;, email: &#x27;student@example.com&#x27;, address: &#x27;Campus&#x27; }, &#x27;SAVE10&#x27;, &#x27;ORD-TEST&#x27;, &#x27;2026-10-19T10:00:00.000Z&#x27;)
+    if (definition.id === &#x27;S4-ASSERT-001-v1&#x27;) assert.equal(next.orders[0].discount, 2500)
+    if (definition.id === &#x27;S4-STATE-001-v1&#x27;) assert.equal(next.products.find(product =&gt; product.id === 1).stock, 5)
+    if (definition.id === &#x27;S4-STATE-002-v1&#x27;) assert.equal(next.cart.length, 1)
+    if (definition.id === &#x27;S4-STATE-003-v1&#x27;) assert.equal(next.orders[0].total, 46000)
+    assert.equal(fs.readFileSync(appModule, &#x27;utf8&#x27;), original)
+  })
+}
+
+test(&#x27;source changes that remove or duplicate anchors are rejected&#x27;, () =&gt; {
+  const definition = experimentById(&#x27;S4-ASSERT-001-v1&#x27;)
+  assert.throws(() =&gt; mutateSource(definition, &#x27;no anchor&#x27;), /exactly one/)
+  assert.throws(() =&gt; mutateSource(definition, original + original), /exactly one/)
+})
+
+test(&#x27;v2 preserves all legacy values and adds explicit migration defaults&#x27;, () =&gt; {
+  const legacy = legacyRecord()
+  const next = upgradeRecord(legacy)
+  assert.equal(next.schema_version, 2)
+  for (const key of Object.keys(legacy).filter(key =&gt; key !== &#x27;schema_version&#x27;)) assert.deepEqual(next[key], legacy[key])
+  assert.equal(next.emulated, false)
+  assert.equal(next.injected_at, null)
+  assert.equal(next.injection_verified, false)
+  assert.equal(next.expected_failure_type, null)
+})
+
+test(&#x27;migration is backed up, synchronized, idempotent, and preserves rows&#x27;, t =&gt; {
+  const directory = temporary(t); const store = new HistoryStore(directory)
+  const legacy = [legacyRecord(), legacyRecord()]
+  const json = JSON.stringify(legacy, null, 2) + &#x27;\n&#x27;
+  const csv = serializeCSV(legacy)
+  fs.writeFileSync(store.json, json); fs.writeFileSync(store.csv, csv)
+  const result = store.migrate()
+  assert.equal(result.migrated, 2)
+  assert.equal(fs.readFileSync(path.join(result.backup, &#x27;execution-history.v1.json&#x27;), &#x27;utf8&#x27;), json)
+  assert.equal(fs.readFileSync(path.join(result.backup, &#x27;test-history.v1.csv&#x27;), &#x27;utf8&#x27;), csv)
+  assert.deepEqual(store.validate(), legacy.map(upgradeRecord))
+  assert.deepEqual(store.migrate(), { migrated: 0, backup: null })
+})
+
+test(&#x27;append refuses unmigrated history without losing original data&#x27;, t =&gt; {
+  const store = new HistoryStore(temporary(t)); const row = legacyRecord()
+  fs.writeFileSync(store.json, JSON.stringify([row])); fs.writeFileSync(store.csv, serializeCSV([row]))
+  assert.throws(() =&gt; store.append(upgradeRecord(legacyRecord())), /telemetry:migrate/)
+  assert.deepEqual(store.validate(), [row])
+})
+
+test(&#x27;typed experiment metadata rejects malformed booleans and unverified timestamps&#x27;, () =&gt; {
+  assert.throws(() =&gt; experimentMetadata([{ type: &#x27;emulated&#x27;, description: &#x27;yes&#x27; }]))
+  const row = upgradeRecord(legacyRecord())
+  assert.throws(() =&gt; validateRecord({ ...row, emulated: true, injection_verified: true }))
+  assert.throws(() =&gt; validateRecord({ ...row, injected_at: &#x27;not-a-date&#x27; }))
+})
+
+function campaignRows() {
+  const run = randomUUID()
+  return EXPERIMENTS.map(definition =&gt; ({
+    ...upgradeRecord(legacyRecord()), run_id: run, test_id: definition.testId,
+    experiment_id: definition.id, fault_variant: definition.variant, fault_type: definition.faultType,
+    mutation_version: definition.version, scenario_variant: definition.scenario,
+    expected_failure_type: definition.expected, failure_type: definition.expected,
+    classification_source: definition.expected ? &#x27;HEURISTIC&#x27; : &#x27;NONE&#x27;,
+    status: definition.expected ? &#x27;FAIL&#x27; : &#x27;PASS&#x27;, emulated: Boolean(definition.expected),
+    injection_verified: Boolean(definition.expected), injected_at: definition.expected ? &#x27;2026-10-19T10:00:00.001Z&#x27; : null,
+    screenshot_path: definition.expected ? &#x27;artifacts/test/screenshot.png&#x27; : null,
+    trace_path: definition.expected ? &#x27;artifacts/test/trace.zip&#x27; : null,
+    notes: definition.kind === &#x27;source&#x27; ? &#x27;mutated_sha256 evidence&#x27; : &#x27;&#x27;,
+  }))
+}
+
+test(&#x27;campaign audit verifies observed diversity separately from expected labels&#x27;, () =&gt; {
+  const counts = validateCampaign(campaignRows(), EXPERIMENTS)
+  assert.equal(counts.PASS, 6); assert.equal(counts.FAIL, 9)
+  assert.equal(counts.LOCATOR_NOT_FOUND, 1); assert.equal(counts.LOCATOR_AMBIGUOUS, 1)
+  assert.equal(counts.ASSERTION_MISMATCH, 1); assert.equal(counts.STATE_CONSISTENCY_FAILURE, 3)
+  assert.equal(counts.ACTIONABILITY_FAILURE, 3)
+})
+
+for (const [name, change] of [
+  [&#x27;surviving mutation&#x27;, row =&gt; { row.status = &#x27;PASS&#x27; }],
+  [&#x27;wrong observed category&#x27;, row =&gt; { row.failure_type = &#x27;UNKNOWN&#x27; }],
+  [&#x27;unverified injection&#x27;, row =&gt; { row.injection_verified = false }],
+  [&#x27;setup failure&#x27;, row =&gt; { row.failure_phase = &#x27;setup&#x27; }],
+  [&#x27;missing artifact&#x27;, row =&gt; { row.trace_path = null }],
+  [&#x27;suppressed failure&#x27;, row =&gt; { row.expected_status = &#x27;FAIL&#x27; }],
+]) {
+  test(`campaign audit rejects ${name}`, () =&gt; {
+    const rows = campaignRows(); change(rows.find(row =&gt; row.emulated))
+    assert.throws(() =&gt; validateCampaign(rows, EXPERIMENTS))
+  })
+}
+
+test(&#x27;source mutation patterns accept Vite decimal and arrow-parameter normalization&#x27;, () =&gt; {
+  const served = original.replace(&#x27;SAVE10: 0.1&#x27;, &#x27;SAVE10: .1&#x27;).replace(&#x27;find(item =&gt;&#x27;, &#x27;find((item) =&gt;&#x27;)
+  for (const definition of EXPERIMENTS.filter(item =&gt; item.kind === &#x27;source&#x27;)) {
+    assert.notEqual(mutateSource(definition, served), served)
+  }
+})
+
+test(&#x27;inspection filters consume arguments once and exclude invalid campaigns&#x27;, t =&gt; {
+  const directory = temporary(t)
+  const store = new HistoryStore(directory)
+  const pass = upgradeRecord(legacyRecord())
+  const fail = { ...upgradeRecord(legacyRecord()), status: &#x27;FAIL&#x27;, failure_type: &#x27;UNKNOWN&#x27;, classification_source: &#x27;UNKNOWN&#x27; }
+  store.append(pass); store.append(fail)
+  fs.mkdirSync(path.join(directory, &#x27;campaigns&#x27;, &#x27;good&#x27;), { recursive: true })
+  fs.writeFileSync(path.join(directory, &#x27;campaigns&#x27;, &#x27;good&#x27;, &#x27;campaign.json&#x27;), JSON.stringify({ status: &#x27;VERIFIED&#x27;, attempt_ids: [pass.attempt_id] }))
+  fs.mkdirSync(path.join(directory, &#x27;campaigns&#x27;, &#x27;bad&#x27;), { recursive: true })
+  fs.writeFileSync(path.join(directory, &#x27;campaigns&#x27;, &#x27;bad&#x27;, &#x27;campaign.json&#x27;), JSON.stringify({ status: &#x27;INVALID&#x27;, attempt_ids: [fail.attempt_id] }))
+  const script = new URL(&#x27;./inspect.js&#x27;, import.meta.url)
+  for (const [args, expected] of [[[&#x27;--status&#x27;, &#x27;FAIL&#x27;], &#x27;FAIL&#x27;], [[&#x27;--verified-campaigns&#x27;], &#x27;PASS&#x27;]]) {
+    const result = spawnSync(process.execPath, [script.pathname, ...args], { encoding: &#x27;utf8&#x27;, env: { ...process.env, TELEMETRY_DIR: directory } })
+    assert.equal(result.status, 0, result.stderr)
+    const summary = JSON.parse(result.stdout)
+    assert.equal(summary.records, 1)
+    assert.equal(summary.status[expected], 1)
+  }
+})
+</code></pre></details>
+<details id="source-automation/experiments/fixtures.js"><summary>automation/experiments/fixtures.js</summary><pre><code>import { test as base, expect } from &#x27;../fixtures/test.js&#x27;
+import { FaultController } from &#x27;./injector.js&#x27;
+import { experimentById } from &#x27;./registry.js&#x27;
+
+export const test = base.extend({
+  mutation: [&#x27;S4-BASE-001-v1&#x27;, { option: true }],
+  fault: [async ({ page, mutation }, use, testInfo) =&gt; {
+    const controller = new FaultController(page, testInfo, experimentById(mutation))
+    await controller.install()
+    await use(controller)
+    // A fresh Playwright context discards all DOM changes, timers, routes and module caches.
+    // Do not restore before failure artifacts are captured; retain the fault as evidence.
+  }, { auto: true }],
+})
+export { expect }
+</code></pre></details>
+<details id="source-automation/experiments/injector.js"><summary>automation/experiments/injector.js</summary><pre><code>import { createHash } from &#x27;node:crypto&#x27;
+import { mutateSource } from &#x27;./registry.js&#x27;
+
+export class FaultController {
+  constructor(page, testInfo, definition) {
+    this.page = page
+    this.testInfo = testInfo
+    this.definition = definition
+    this.verified = false
+    this.applied = false
+    this.evidence = null
+    for (const [type, description] of Object.entries({
+      experiment_id: definition.id, fault_variant: definition.variant, scenario_variant: definition.scenario,
+      fault_type: definition.faultType, mutation_version: definition.version,
+      locator_mutation: definition.kind === &#x27;dom&#x27; &amp;&amp; definition.scenario === &#x27;checkout-navigation&#x27; ? definition.operation : &#x27;&#x27;,
+      expected_failure_type: definition.expected ?? &#x27;&#x27;, emulated: String(definition.kind !== &#x27;none&#x27;),
+      injection_verified: &#x27;false&#x27;,
+    })) this.annotate(type, description)
+  }
+
+  annotate(type, description) {
+    this.testInfo.annotations.push({ type, description })
+  }
+
+  markApplied(evidence) {
+    if (this.applied) throw new Error(&#x27;Only one fault may be injected into an attempt&#x27;)
+    this.applied = true
+    this.evidence = { ...evidence, experiment_id: this.definition.id, mutation_version: this.definition.version }
+    this.annotate(&#x27;injected_at&#x27;, new Date().toISOString())
+  }
+
+  async install() {
+    if (this.definition.kind !== &#x27;source&#x27;) return
+    await this.page.route(url =&gt; url.pathname === &#x27;/src/context/shopState.js&#x27;, async route =&gt; {
+      try {
+        const response = await route.fetch()
+        if (response.status() !== 200) throw new Error(`Mutation source returned HTTP ${response.status()}`)
+        const original = await response.text()
+        const mutated = mutateSource(this.definition, original)
+        this.markApplied({
+          method: &#x27;browser-module-response&#x27;, module: &#x27;/src/context/shopState.js&#x27;,
+          original_sha256: createHash(&#x27;sha256&#x27;).update(original).digest(&#x27;hex&#x27;),
+          mutated_sha256: createHash(&#x27;sha256&#x27;).update(mutated).digest(&#x27;hex&#x27;),
+          anchor: this.definition.pattern.source, replacement: this.definition.replacement,
+        })
+        await route.fulfill({ response, body: mutated, headers: { ...response.headers(), &#x27;cache-control&#x27;: &#x27;no-store&#x27; } })
+      } catch (error) {
+        this.injectionError = error.message
+        this.annotate(&#x27;telemetry_note&#x27;, `Injection failed: ${error.message}`)
+        await route.abort(&#x27;failed&#x27;)
+      }
+    })
+  }
+
+  async applyDOM(locator) {
+    if (this.definition.kind !== &#x27;dom&#x27;) throw new Error(&#x27;DOM mutation requested for a non-DOM variant&#x27;)
+    const evidence = await locator.evaluate((element, operation) =&gt; {
+      const original = { text: element.textContent, hidden: element.hidden, disabled: Boolean(element.disabled), display: element.style.getPropertyValue(&#x27;display&#x27;), displayPriority: element.style.getPropertyPriority(&#x27;display&#x27;) }
+      if (operation === &#x27;rename&#x27;) element.textContent = &#x27;Proceed to purchase&#x27;
+      else if (operation === &#x27;duplicate&#x27;) element.after(element.cloneNode(true))
+      else if (operation === &#x27;hide&#x27;) { element.hidden = true; element.style.setProperty(&#x27;display&#x27;, &#x27;none&#x27;, &#x27;important&#x27;) }
+      else if (operation === &#x27;disable&#x27;) element.disabled = true
+      else if (operation === &#x27;delay&#x27;) {
+        element.hidden = true
+        element.style.setProperty(&#x27;display&#x27;, &#x27;none&#x27;, &#x27;important&#x27;)
+        // The control is in the DOM but not rendered for longer than the action budget.
+        setTimeout(() =&gt; {
+          element.hidden = original.hidden
+          if (original.display) element.style.setProperty(&#x27;display&#x27;, original.display, original.displayPriority)
+          else element.style.removeProperty(&#x27;display&#x27;)
+        }, 30_000)
+      } else throw new Error(`Unsupported DOM operation: ${operation}`)
+      return { method: &#x27;isolated-browser-dom&#x27;, operation, original }
+    }, this.definition.operation)
+    this.markApplied(evidence)
+  }
+
+  async confirm(observation) {
+    if (!this.applied || this.injectionError) throw new Error(this.injectionError || &#x27;Mutation was not applied&#x27;)
+    this.verified = true
+    this.annotate(&#x27;injection_verified&#x27;, &#x27;true&#x27;)
+    const evidence = { ...this.evidence, observation }
+    this.annotate(&#x27;telemetry_note&#x27;, JSON.stringify(evidence))
+    await this.testInfo.attach(&#x27;mutation-evidence&#x27;, {
+      body: Buffer.from(JSON.stringify(evidence, null, 2)), contentType: &#x27;application/json&#x27;,
+    })
+  }
+}
+
+// Only a failed, explicitly chosen state invariant receives this researcher label.
+// Mutation metadata alone never determines an observed failure_type.
+export async function assertStateInvariant(fault, assertion) {
+  if (!fault.verified) throw new Error(&#x27;Cannot classify an unverified mutation as a state inconsistency&#x27;)
+  try { await assertion() }
+  catch (error) {
+    fault.annotate(&#x27;failure_type&#x27;, &#x27;STATE_CONSISTENCY_FAILURE&#x27;)
+    fault.annotate(&#x27;telemetry_note&#x27;, &#x27;Researcher-labeled failure of the explicitly checked state invariant.&#x27;)
+    throw error
+  }
+}
+</code></pre></details>
+<details id="source-automation/experiments/inspect.js"><summary>automation/experiments/inspect.js</summary><pre><code>import fs from &#x27;node:fs&#x27;
+import path from &#x27;node:path&#x27;
+import { HistoryStore } from &#x27;../telemetry/history.js&#x27;
+import { PROJECT_ROOT } from &#x27;../telemetry/metadata.js&#x27;
+
+try {
+  const directory = path.resolve(process.env.TELEMETRY_DIR || path.join(PROJECT_ROOT, &#x27;dataset&#x27;))
+  const args = process.argv.slice(2)
+  let rows = new HistoryStore(directory).validate()
+  while (args.length) {
+    const option = args.shift()
+    if ([&#x27;--run-id&#x27;, &#x27;--experiment&#x27;, &#x27;--status&#x27;, &#x27;--failure-type&#x27;].includes(option)) {
+      const value = args.shift()
+      if (!value) throw new Error(`Missing value for ${option}`)
+      const field = { &#x27;--run-id&#x27;: &#x27;run_id&#x27;, &#x27;--experiment&#x27;: &#x27;experiment_id&#x27;, &#x27;--status&#x27;: &#x27;status&#x27;, &#x27;--failure-type&#x27;: &#x27;failure_type&#x27; }[option]
+      rows = rows.filter(row =&gt; row[field] === value)
+    }
+    else if (option === &#x27;--verified-campaigns&#x27;) {
+      const campaigns = path.join(directory, &#x27;campaigns&#x27;)
+      const attempts = new Set()
+      if (fs.existsSync(campaigns)) {
+        for (const entry of fs.readdirSync(campaigns, { withFileTypes: true })) {
+          if (!entry.isDirectory()) continue
+          const manifest = JSON.parse(fs.readFileSync(path.join(campaigns, entry.name, &#x27;campaign.json&#x27;), &#x27;utf8&#x27;))
+          if (manifest.status === &#x27;VERIFIED&#x27;) for (const id of manifest.attempt_ids) attempts.add(id)
+        }
+      }
+      rows = rows.filter(row =&gt; attempts.has(row.attempt_id))
+    }
+    else if (option === &#x27;--latest-campaign&#x27;) {
+      const manifest = JSON.parse(fs.readFileSync(path.join(directory, &#x27;campaigns/latest.json&#x27;), &#x27;utf8&#x27;))
+      const attempts = new Set(manifest.attempt_ids)
+      rows = rows.filter(row =&gt; attempts.has(row.attempt_id))
+    } else throw new Error(`Unknown query: ${option}`)
+  }
+  const countBy = key =&gt; Object.fromEntries([...new Set(rows.map(row =&gt; row[key] ?? &#x27;NONE&#x27;))]
+    .map(value =&gt; [value, rows.filter(row =&gt; (row[key] ?? &#x27;NONE&#x27;) === value).length]))
+  console.log(JSON.stringify({ records: rows.length, status: countBy(&#x27;status&#x27;), failure_type: countBy(&#x27;failure_type&#x27;),
+    fault_type: countBy(&#x27;fault_type&#x27;), emulated: countBy(&#x27;emulated&#x27;), experiment_id: countBy(&#x27;experiment_id&#x27;) }, null, 2))
+} catch (error) {
+  console.error(error.message)
+  process.exitCode = 1
+}
+</code></pre></details>
+<details id="source-automation/experiments/locator-mutation/locator.spec.js"><summary>automation/experiments/locator-mutation/locator.spec.js</summary><pre><code>import { test, expect } from &#x27;../fixtures.js&#x27;
+import { enterDemo } from &#x27;../../utils/flows.js&#x27;
+
+for (const number of [&#x27;001&#x27;, &#x27;002&#x27;]) {
+  test.describe(`Locator mutation ${number}`, () =&gt; {
+    test.use({ mutation: `S4-LOC-${number}-v1` })
+    test(`EXPLOC-${number} original checkout locator detects a DOM mutation`, async ({ app, page, fault }) =&gt; {
+      await enterDemo(app)
+      await app.products.addToCart(&#x27;Laptop&#x27;)
+      await app.products.openCart()
+      await expect(app.cart.checkoutLink).toHaveCount(1)
+      await fault.applyDOM(app.cart.checkoutLink)
+      if (number === &#x27;001&#x27;) {
+        await expect(page.getByRole(&#x27;link&#x27;, { name: &#x27;Proceed to purchase&#x27;, exact: true })).toHaveCount(1)
+        await expect(app.cart.checkoutLink).toHaveCount(0)
+        await fault.confirm(&#x27;Original accessible name absent; renamed checkout link present.&#x27;)
+      } else {
+        await expect(app.cart.checkoutLink).toHaveCount(2)
+        await fault.confirm(&#x27;Two links match the unchanged checkout locator.&#x27;)
+      }
+      // Preserve the original action: no fallback and no expected-failure suppression.
+      await app.cart.checkoutLink.click({ timeout: 500 })
+    })
+  })
+}
+</code></pre></details>
+<details id="source-automation/experiments/playwright.config.js"><summary>automation/experiments/playwright.config.js</summary><pre><code>import { defineConfig } from &#x27;@playwright/test&#x27;
+import { fileURLToPath } from &#x27;node:url&#x27;
+import base from &#x27;../playwright.config.js&#x27;
+
+export default defineConfig({
+  ...base,
+  testDir: fileURLToPath(new URL(&#x27;.&#x27;, import.meta.url)),
+  testMatch: &#x27;**/*.spec.js&#x27;,
+  fullyParallel: false,
+  workers: 1,
+  retries: 0,
+  timeout: 15_000,
+  expect: { timeout: 800 },
+  outputDir: fileURLToPath(new URL(&#x27;../reports/experiments/results&#x27;, import.meta.url)),
+  reporter: [
+    [&#x27;list&#x27;],
+    [&#x27;html&#x27;, { outputFolder: fileURLToPath(new URL(&#x27;../reports/experiments/html&#x27;, import.meta.url)), open: &#x27;never&#x27; }],
+    [fileURLToPath(new URL(&#x27;../telemetry/TelemetryReporter.js&#x27;, import.meta.url))],
+  ],
+})
+</code></pre></details>
+<details id="source-automation/experiments/registry.js"><summary>automation/experiments/registry.js</summary><pre><code>const control = (number, scenario) =&gt; ({
+  id: `S4-BASE-${number}-v1`, testId: `EXPBASE-${number}`, variant: &#x27;healthy-control.v1&#x27;,
+  scenario, kind: &#x27;none&#x27;, faultType: &#x27;&#x27;, expected: null,
+})
+
+export const EXPERIMENTS = Object.freeze([
+  control(&#x27;001&#x27;, &#x27;checkout-navigation&#x27;), control(&#x27;002&#x27;, &#x27;coupon-save10&#x27;),
+  control(&#x27;003&#x27;, &#x27;stock-after-order&#x27;), control(&#x27;004&#x27;, &#x27;cart-after-order&#x27;),
+  control(&#x27;005&#x27;, &#x27;order-total&#x27;), control(&#x27;006&#x27;, &#x27;checkout-action&#x27;),
+  { id: &#x27;S4-LOC-001-v1&#x27;, testId: &#x27;EXPLOC-001&#x27;, variant: &#x27;checkout-name-change.v1&#x27;, scenario: &#x27;checkout-navigation&#x27;,
+    kind: &#x27;dom&#x27;, operation: &#x27;rename&#x27;, faultType: &#x27;ACCESSIBLE_NAME_CHANGE&#x27;, expected: &#x27;LOCATOR_NOT_FOUND&#x27; },
+  { id: &#x27;S4-LOC-002-v1&#x27;, testId: &#x27;EXPLOC-002&#x27;, variant: &#x27;duplicate-checkout-link.v1&#x27;, scenario: &#x27;checkout-navigation&#x27;,
+    kind: &#x27;dom&#x27;, operation: &#x27;duplicate&#x27;, faultType: &#x27;DUPLICATE_MATCH&#x27;, expected: &#x27;LOCATOR_AMBIGUOUS&#x27; },
+  { id: &#x27;S4-ASSERT-001-v1&#x27;, testId: &#x27;EXPASSERT-001&#x27;, variant: &#x27;save10-five-percent.v1&#x27;, scenario: &#x27;coupon-save10&#x27;,
+    kind: &#x27;source&#x27;, faultType: &#x27;COUPON_RATE_DEFECT&#x27;, expected: &#x27;ASSERTION_MISMATCH&#x27;,
+    pattern: /SAVE10:\s*0?\.1\b/, replacement: &#x27;SAVE10: 0.05&#x27; },
+  { id: &#x27;S4-STATE-001-v1&#x27;, testId: &#x27;EXPSTATE-001&#x27;, variant: &#x27;stock-not-reduced.v1&#x27;, scenario: &#x27;stock-after-order&#x27;,
+    kind: &#x27;source&#x27;, faultType: &#x27;STOCK_COMMIT_DEFECT&#x27;, expected: &#x27;STATE_CONSISTENCY_FAILURE&#x27;,
+    pattern: /stock:\s*product\.stock\s*-\s*\(items\.find\(\(?item\)?\s*=&gt;\s*item\.id\s*===\s*product\.id\)\?\.quantity\s*\?\?\s*0\)/,
+    replacement: &#x27;stock: product.stock&#x27; },
+  { id: &#x27;S4-STATE-002-v1&#x27;, testId: &#x27;EXPSTATE-002&#x27;, variant: &#x27;cart-not-cleared.v1&#x27;, scenario: &#x27;cart-after-order&#x27;,
+    kind: &#x27;source&#x27;, faultType: &#x27;CART_COMMIT_DEFECT&#x27;, expected: &#x27;STATE_CONSISTENCY_FAILURE&#x27;,
+    pattern: /cart:\s*\[\],\s*\n\s*orders:\s*\[order,\s*\.\.\.state\.orders\]/,
+    replacement: &#x27;cart: state.cart,\n    orders: [order, ...state.orders]&#x27; },
+  { id: &#x27;S4-STATE-003-v1&#x27;, testId: &#x27;EXPSTATE-003&#x27;, variant: &#x27;order-total-extra-charge.v1&#x27;, scenario: &#x27;order-total&#x27;,
+    kind: &#x27;source&#x27;, faultType: &#x27;ORDER_TOTAL_COMMIT_DEFECT&#x27;, expected: &#x27;STATE_CONSISTENCY_FAILURE&#x27;,
+    pattern: /items,\s*\.\.\.totals\s*\}/, replacement: &#x27;items, ...totals, total: totals.total + 1000 }&#x27; },
+  { id: &#x27;S4-ACTION-001-v1&#x27;, testId: &#x27;EXPACTION-001&#x27;, variant: &#x27;delayed-control-render.v1&#x27;, scenario: &#x27;checkout-action&#x27;,
+    kind: &#x27;dom&#x27;, operation: &#x27;delay&#x27;, faultType: &#x27;DELAYED_RENDERING&#x27;, expected: &#x27;ACTIONABILITY_FAILURE&#x27; },
+  { id: &#x27;S4-ACTION-002-v1&#x27;, testId: &#x27;EXPACTION-002&#x27;, variant: &#x27;hidden-submit-control.v1&#x27;, scenario: &#x27;checkout-action&#x27;,
+    kind: &#x27;dom&#x27;, operation: &#x27;hide&#x27;, faultType: &#x27;HIDDEN_CONTROL&#x27;, expected: &#x27;ACTIONABILITY_FAILURE&#x27; },
+  { id: &#x27;S4-ACTION-003-v1&#x27;, testId: &#x27;EXPACTION-003&#x27;, variant: &#x27;disabled-submit-control.v1&#x27;, scenario: &#x27;checkout-action&#x27;,
+    kind: &#x27;dom&#x27;, operation: &#x27;disable&#x27;, faultType: &#x27;DISABLED_CONTROL&#x27;, expected: &#x27;ACTIONABILITY_FAILURE&#x27; },
+].map(experiment =&gt; Object.freeze({ ...experiment, version: &#x27;1.0.1&#x27; })))
+
+export function experimentById(id) {
+  const experiment = EXPERIMENTS.find(item =&gt; item.id === id)
+  if (!experiment) throw new Error(`Unknown versioned experiment: ${id}`)
+  return experiment
+}
+
+export function mutateSource(experiment, source) {
+  if (experiment.kind !== &#x27;source&#x27;) throw new Error(&#x27;Source mutation requested for a non-source variant&#x27;)
+  const matches = [...source.matchAll(new RegExp(experiment.pattern.source, &#x27;g&#x27;))]
+  if (matches.length !== 1) throw new Error(`${experiment.id}: expected exactly one mutation anchor, found ${matches.length}`)
+  return source.replace(experiment.pattern, () =&gt; experiment.replacement)
+}
+</code></pre></details>
+<details id="source-automation/experiments/run.js"><summary>automation/experiments/run.js</summary><pre><code>import fs from &#x27;node:fs&#x27;
+import path from &#x27;node:path&#x27;
+import { randomUUID } from &#x27;node:crypto&#x27;
+import { spawn } from &#x27;node:child_process&#x27;
+import { HistoryStore, atomicWrite } from &#x27;../telemetry/history.js&#x27;
+import { AUTOMATION_ROOT, PROJECT_ROOT, createRunMetadata } from &#x27;../telemetry/metadata.js&#x27;
+import { EXPERIMENTS } from &#x27;./registry.js&#x27;
+import { validateCampaign } from &#x27;./campaign.js&#x27;
+
+const groups = {
+  baseline: &#x27;S4-BASE-&#x27;, &#x27;locator-mutation&#x27;: &#x27;S4-LOC-&#x27;, &#x27;assertion-mutation&#x27;: &#x27;S4-ASSERT-&#x27;,
+  &#x27;state-mutation&#x27;: &#x27;S4-STATE-&#x27;, &#x27;timeout-mutation&#x27;: &#x27;S4-ACTION-&#x27;,
+}
+let group = null
+let repetitions = 1
+try {
+  const args = process.argv.slice(2)
+  while (args.length) {
+    const option = args.shift()
+    if (option === &#x27;--group&#x27;) {
+      group = args.shift()
+      if (!Object.hasOwn(groups, group)) throw new Error(`Unknown group: ${group}`)
+    } else if (option === &#x27;--repeat&#x27;) {
+      repetitions = Number(args.shift())
+      if (!Number.isInteger(repetitions) || repetitions &lt; 1 || repetitions &gt; 100) throw new Error(&#x27;--repeat must be an integer from 1 to 100&#x27;)
+    } else throw new Error(`Unknown option: ${option}`)
+  }
+  const definitions = EXPERIMENTS.filter(item =&gt; !group || item.kind === &#x27;none&#x27; || item.id.startsWith(groups[group]))
+  const directory = path.resolve(process.env.TELEMETRY_DIR || path.join(PROJECT_ROOT, &#x27;dataset&#x27;))
+  const store = new HistoryStore(directory)
+  const migration = store.migrate()
+  if (migration.migrated) console.log(`Migrated ${migration.migrated} existing records; backup: ${migration.backup}`)
+  const before = store.validate()
+  const beforeIDs = new Set(before.map(row =&gt; row.attempt_id))
+  const sourceBefore = createRunMetadata({ workers: 1 })
+  const id = randomUUID()
+  const file = path.join(directory, &#x27;campaigns&#x27;, id, &#x27;campaign.json&#x27;)
+  const manifest = {
+    campaign_id: id, started_at: new Date().toISOString(), status: &#x27;RUNNING&#x27;,
+    group: group || &#x27;all&#x27;, repetitions, expected_rows: definitions.length * repetitions,
+    experiments: definitions.map(item =&gt; ({ id: item.id, variant: item.variant, version: item.version })),
+  }
+  atomicWrite(file, JSON.stringify(manifest, null, 2) + &#x27;\n&#x27;)
+  const command = [path.join(AUTOMATION_ROOT, &#x27;node_modules/@playwright/test/cli.js&#x27;), &#x27;test&#x27;,
+    &#x27;--config&#x27;, &#x27;experiments/playwright.config.js&#x27;, `--repeat-each=${repetitions}`]
+  if (group) command.push(&#x27;baseline&#x27;, ...(group === &#x27;baseline&#x27; ? [] : [group]))
+  console.log(&#x27;Injected faults deliberately fail the healthy test oracles. Campaign validation checks these failures separately.&#x27;)
+  const child = spawn(process.execPath, command, { cwd: AUTOMATION_ROOT, stdio: &#x27;inherit&#x27;, env: { ...process.env, TELEMETRY_DIR: directory } })
+  const exit = await new Promise((resolve, reject) =&gt; {
+    child.once(&#x27;error&#x27;, reject)
+    child.once(&#x27;exit&#x27;, (code, signal) =&gt; resolve({ code, signal }))
+  })
+  try {
+    const after = store.validate()
+    const newRows = after.filter(row =&gt; !beforeIDs.has(row.attempt_id))
+    const selectedIDs = new Set(definitions.map(item =&gt; item.id))
+    const rows = newRows.filter(row =&gt; selectedIDs.has(row.experiment_id))
+    Object.assign(manifest, {
+      attempt_ids: rows.map(row =&gt; row.attempt_id),
+      run_ids: [...new Set(rows.map(row =&gt; row.run_id))],
+      unattributed_error_ids: newRows.filter(row =&gt; row.record_type === &#x27;RUN_ERROR&#x27;).map(row =&gt; row.attempt_id),
+    })
+    const counts = validateCampaign(rows, definitions, repetitions)
+    const sourceAfter = createRunMetadata({ workers: 1 })
+    if (sourceBefore.app_version !== sourceAfter.app_version || sourceBefore.test_version !== sourceAfter.test_version) {
+      throw new Error(&#x27;Application/framework sources changed during the campaign&#x27;)
+    }
+    const expectedExit = definitions.some(item =&gt; item.expected) ? 1 : 0
+    if (exit.signal || exit.code !== expectedExit || newRows.some(row =&gt; row.record_type === &#x27;RUN_ERROR&#x27;)) {
+      throw new Error(`Unexpected runner termination: ${JSON.stringify(exit)}`)
+    }
+    Object.assign(manifest, { status: &#x27;VERIFIED&#x27;, completed_at: new Date().toISOString(), counts,
+      run_id: rows[0].run_id, attempt_ids: rows.map(row =&gt; row.attempt_id), playwright_exit_code: exit.code,
+      app_version: sourceBefore.app_version, test_version: sourceBefore.test_version })
+    atomicWrite(file, JSON.stringify(manifest, null, 2) + &#x27;\n&#x27;)
+    atomicWrite(path.join(directory, &#x27;campaigns&#x27;, &#x27;latest.json&#x27;), JSON.stringify(manifest, null, 2) + &#x27;\n&#x27;)
+    console.log(`Campaign VERIFIED: ${JSON.stringify(counts)}\nManifest: ${file}`)
+  } catch (error) {
+    Object.assign(manifest, { status: &#x27;INVALID&#x27;, completed_at: new Date().toISOString(), validation_error: error.message, playwright_exit_code: exit.code })
+    atomicWrite(file, JSON.stringify(manifest, null, 2) + &#x27;\n&#x27;)
+    throw error
+  }
+} catch (error) {
+  console.error(`Campaign validation failed: ${error.message}`)
+  process.exitCode = 1
+}
+</code></pre></details>
+<details id="source-automation/experiments/state-mutation/state.spec.js"><summary>automation/experiments/state-mutation/state.spec.js</summary><pre><code>import { test, expect } from &#x27;../fixtures.js&#x27;
+import { assertStateInvariant } from &#x27;../injector.js&#x27;
+import { enterDemo, startCheckout, finishCheckout } from &#x27;../../utils/flows.js&#x27;
+import { formatPrice } from &#x27;../../utils/values.js&#x27;
+
+for (const number of [&#x27;001&#x27;, &#x27;002&#x27;, &#x27;003&#x27;]) {
+  test.describe(`State mutation ${number}`, () =&gt; {
+    test.use({ mutation: `S4-STATE-${number}-v1` })
+    test(`EXPSTATE-${number} checkout state invariant detects a controlled commit defect`, async ({ app, fault }) =&gt; {
+      await enterDemo(app)
+      await startCheckout(app)
+      await finishCheckout(app)
+      if (number === &#x27;001&#x27;) {
+        await app.checkout.continueShopping()
+        await expect(app.products.product(&#x27;Laptop&#x27;).getByText(&#x27;In stock: 5&#x27;, { exact: true })).toBeVisible()
+        await fault.confirm(&#x27;Order confirmed but Laptop stock remains at 5.&#x27;)
+        await assertStateInvariant(fault, () =&gt; expect(app.products.product(&#x27;Laptop&#x27;).getByText(&#x27;In stock: 4&#x27;, { exact: true })).toBeVisible())
+      } else if (number === &#x27;002&#x27;) {
+        await expect(app.products.cartLink).toHaveText(&#x27;Cart (1)&#x27;)
+        await fault.confirm(&#x27;Order confirmed but original cart item remains.&#x27;)
+        await assertStateInvariant(fault, () =&gt; expect(app.products.cartLink).toHaveText(&#x27;Cart (0)&#x27;))
+      } else {
+        await expect(app.checkout.confirmationItems).toHaveText([`Laptop × 1 — ${formatPrice(50000)}`])
+        await expect(app.checkout.confirmationTotal).toHaveText(`Total: ${formatPrice(51000)}`)
+        await fault.confirm(&#x27;Order line totals 50000 but persisted order total is 51000.&#x27;)
+        await assertStateInvariant(fault, () =&gt; expect(app.checkout.confirmationTotal).toHaveText(`Total: ${formatPrice(50000)}`))
+      }
+    })
+  })
+}
+</code></pre></details>
+<details id="source-automation/experiments/timeout-mutation/actionability.spec.js"><summary>automation/experiments/timeout-mutation/actionability.spec.js</summary><pre><code>import { test, expect } from &#x27;../fixtures.js&#x27;
+import { enterDemo, startCheckout } from &#x27;../../utils/flows.js&#x27;
+import { customer } from &#x27;../../utils/testData.js&#x27;
+
+for (const number of [&#x27;001&#x27;, &#x27;002&#x27;, &#x27;003&#x27;]) {
+  test.describe(`Actionability mutation ${number}`, () =&gt; {
+    test.use({ mutation: `S4-ACTION-${number}-v1` })
+    test(`EXPACTION-${number} checkout cannot act on an unavailable control`, async ({ app, page, fault }) =&gt; {
+      await enterDemo(app)
+      await startCheckout(app)
+      await app.checkout.fillCustomer(customer)
+      // includeHidden isolates actionability from role-locator visibility filtering.
+      const button = page.getByRole(&#x27;button&#x27;, { name: &#x27;Place order&#x27;, exact: true, includeHidden: true })
+      await expect(button).toBeEnabled()
+      await expect(button).toBeVisible()
+      await fault.applyDOM(button)
+      await expect(button).toHaveCount(1)
+      if (number === &#x27;003&#x27;) await expect(button).toBeDisabled()
+      else await expect(button).toBeHidden()
+      await fault.confirm(number === &#x27;003&#x27; ? &#x27;Unique submit button is disabled.&#x27; : &#x27;Unique submit button exists but is not rendered.&#x27;)
+      await button.click({ timeout: 500 })
+    })
+  })
+}
+</code></pre></details>
+<details id="source-automation/telemetry/record.v1.schema.json"><summary>automation/telemetry/record.v1.schema.json</summary><pre><code>{
+  &quot;$schema&quot;: &quot;https://json-schema.org/draft/2020-12/schema&quot;,
+  &quot;title&quot;: &quot;Playwright execution telemetry v1&quot;,
+  &quot;type&quot;: &quot;object&quot;,
+  &quot;additionalProperties&quot;: false,
+  &quot;properties&quot;: {
+    &quot;schema_version&quot;: {
+      &quot;const&quot;: 1
+    },
+    &quot;record_type&quot;: {
+      &quot;enum&quot;: [
+        &quot;TEST_ATTEMPT&quot;,
+        &quot;RUN_ERROR&quot;
+      ]
+    },
+    &quot;run_id&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;pattern&quot;: &quot;^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$&quot;
+    },
+    &quot;attempt_id&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;pattern&quot;: &quot;^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$&quot;
+    },
+    &quot;test_id&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;test_name&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;suite_name&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;browser&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;status&quot;: {
+      &quot;enum&quot;: [
+        &quot;PASS&quot;,
+        &quot;FAIL&quot;,
+        &quot;TIMED_OUT&quot;,
+        &quot;SKIPPED&quot;,
+        &quot;INTERRUPTED&quot;
+      ]
+    },
+    &quot;failure_type&quot;: {
+      &quot;enum&quot;: [
+        null,
+        &quot;LOCATOR_NOT_FOUND&quot;,
+        &quot;LOCATOR_AMBIGUOUS&quot;,
+        &quot;ACTIONABILITY_FAILURE&quot;,
+        &quot;ASSERTION_MISMATCH&quot;,
+        &quot;STATE_CONSISTENCY_FAILURE&quot;,
+        &quot;APPLICATION_RUNTIME_ERROR&quot;,
+        &quot;SETUP_ENVIRONMENT_FAILURE&quot;,
+        &quot;UNKNOWN&quot;
+      ]
+    },
+    &quot;duration_ms&quot;: {
+      &quot;type&quot;: &quot;number&quot;,
+      &quot;minimum&quot;: 0
+    },
+    &quot;retry_count&quot;: {
+      &quot;type&quot;: &quot;integer&quot;,
+      &quot;minimum&quot;: 0
+    },
+    &quot;start_time&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;format&quot;: &quot;date-time&quot;
+    },
+    &quot;end_time&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;format&quot;: &quot;date-time&quot;
+    },
+    &quot;app_version&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;test_version&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;trace_path&quot;: {
+      &quot;type&quot;: [
+        &quot;string&quot;,
+        &quot;null&quot;
+      ],
+      &quot;pattern&quot;: &quot;^artifacts/[A-Za-z0-9_./-]+$&quot;
+    },
+    &quot;screenshot_path&quot;: {
+      &quot;type&quot;: [
+        &quot;string&quot;,
+        &quot;null&quot;
+      ],
+      &quot;pattern&quot;: &quot;^artifacts/[A-Za-z0-9_./-]+$&quot;
+    },
+    &quot;notes&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;framework_version&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;playwright_version&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;timestamp&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;format&quot;: &quot;date-time&quot;
+    },
+    &quot;environment&quot;: {
+      &quot;type&quot;: &quot;object&quot;,
+      &quot;additionalProperties&quot;: false,
+      &quot;required&quot;: [
+        &quot;node_version&quot;,
+        &quot;platform&quot;,
+        &quot;architecture&quot;,
+        &quot;os_release&quot;,
+        &quot;hostname&quot;,
+        &quot;ci&quot;,
+        &quot;workers&quot;,
+        &quot;git_commit&quot;
+      ],
+      &quot;properties&quot;: {
+        &quot;node_version&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;minLength&quot;: 1
+        },
+        &quot;platform&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;minLength&quot;: 1
+        },
+        &quot;architecture&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;minLength&quot;: 1
+        },
+        &quot;os_release&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;minLength&quot;: 1
+        },
+        &quot;hostname&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;minLength&quot;: 1
+        },
+        &quot;ci&quot;: {
+          &quot;type&quot;: &quot;boolean&quot;
+        },
+        &quot;workers&quot;: {
+          &quot;type&quot;: &quot;integer&quot;,
+          &quot;minimum&quot;: 0
+        },
+        &quot;git_commit&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;minLength&quot;: 1
+        }
+      }
+    },
+    &quot;locator_mutation&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;fault_variant&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;experiment_id&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;scenario_variant&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;expected_status&quot;: {
+      &quot;enum&quot;: [
+        &quot;PASS&quot;,
+        &quot;FAIL&quot;,
+        &quot;TIMED_OUT&quot;,
+        &quot;SKIPPED&quot;,
+        &quot;INTERRUPTED&quot;
+      ]
+    },
+    &quot;classification_source&quot;: {
+      &quot;enum&quot;: [
+        &quot;NONE&quot;,
+        &quot;ANNOTATION&quot;,
+        &quot;HEURISTIC&quot;,
+        &quot;UNKNOWN&quot;
+      ]
+    },
+    &quot;failure_phase&quot;: {
+      &quot;enum&quot;: [
+        &quot;test&quot;,
+        &quot;setup&quot;,
+        &quot;teardown&quot;,
+        &quot;run&quot;
+      ]
+    },
+    &quot;error_message&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;error_stack&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;runtime_errors&quot;: {
+      &quot;type&quot;: &quot;array&quot;,
+      &quot;items&quot;: {
+        &quot;type&quot;: &quot;string&quot;
+      }
+    },
+    &quot;project_name&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;worker_index&quot;: {
+      &quot;type&quot;: &quot;integer&quot;,
+      &quot;minimum&quot;: -1
+    },
+    &quot;repeat_index&quot;: {
+      &quot;type&quot;: &quot;integer&quot;,
+      &quot;minimum&quot;: 0
+    }
+  },
+  &quot;required&quot;: [
+    &quot;schema_version&quot;,
+    &quot;record_type&quot;,
+    &quot;run_id&quot;,
+    &quot;attempt_id&quot;,
+    &quot;test_id&quot;,
+    &quot;test_name&quot;,
+    &quot;suite_name&quot;,
+    &quot;browser&quot;,
+    &quot;status&quot;,
+    &quot;failure_type&quot;,
+    &quot;duration_ms&quot;,
+    &quot;retry_count&quot;,
+    &quot;start_time&quot;,
+    &quot;end_time&quot;,
+    &quot;app_version&quot;,
+    &quot;test_version&quot;,
+    &quot;trace_path&quot;,
+    &quot;screenshot_path&quot;,
+    &quot;notes&quot;,
+    &quot;framework_version&quot;,
+    &quot;playwright_version&quot;,
+    &quot;timestamp&quot;,
+    &quot;environment&quot;,
+    &quot;locator_mutation&quot;,
+    &quot;fault_variant&quot;,
+    &quot;experiment_id&quot;,
+    &quot;scenario_variant&quot;,
+    &quot;expected_status&quot;,
+    &quot;classification_source&quot;,
+    &quot;failure_phase&quot;,
+    &quot;error_message&quot;,
+    &quot;error_stack&quot;,
+    &quot;runtime_errors&quot;,
+    &quot;project_name&quot;,
+    &quot;worker_index&quot;,
+    &quot;repeat_index&quot;
+  ]
+}
+</code></pre></details>
+<details id="source-automation/telemetry/migrate-history.js"><summary>automation/telemetry/migrate-history.js</summary><pre><code>import { fileURLToPath } from &#x27;node:url&#x27;
+import { HistoryStore } from &#x27;./history.js&#x27;
+const directory = process.env.TELEMETRY_DIR || fileURLToPath(new URL(&#x27;../../dataset&#x27;, import.meta.url))
+try {
+  const result = new HistoryStore(directory).migrate()
+  console.log(JSON.stringify(result, null, 2))
+} catch (error) {
+  console.error(`Migration failed: ${error.message}`)
+  process.exitCode = 1
+}
+</code></pre></details>
+<details id="source-automation/package.json"><summary>automation/package.json</summary><pre><code>{
+  &quot;name&quot;: &quot;predictive-test-automation&quot;,
+  &quot;version&quot;: &quot;1.0.0&quot;,
+  &quot;private&quot;: true,
+  &quot;type&quot;: &quot;module&quot;,
+  &quot;engines&quot;: {
+    &quot;node&quot;: &quot;&gt;=22&quot;
+  },
+  &quot;scripts&quot;: {
+    &quot;test&quot;: &quot;playwright test&quot;,
+    &quot;test:list&quot;: &quot;playwright test --list&quot;,
+    &quot;test:headed&quot;: &quot;playwright test --headed&quot;,
+    &quot;test:ui&quot;: &quot;playwright test --ui&quot;,
+    &quot;test:debug&quot;: &quot;playwright test --debug&quot;,
+    &quot;report&quot;: &quot;playwright show-report reports/html&quot;,
+    &quot;browsers:install&quot;: &quot;playwright install chromium&quot;,
+    &quot;test:telemetry&quot;: &quot;node --test telemetry/telemetry.test.js&quot;,
+    &quot;telemetry:validate&quot;: &quot;node telemetry/validate-history.js&quot;,
+    &quot;telemetry:migrate&quot;: &quot;node telemetry/migrate-history.js&quot;,
+    &quot;experiments&quot;: &quot;node experiments/run.js&quot;,
+    &quot;experiments:list&quot;: &quot;playwright test --config experiments/playwright.config.js --list&quot;,
+    &quot;experiments:inspect&quot;: &quot;node experiments/inspect.js&quot;,
+    &quot;experiments:report&quot;: &quot;playwright show-report reports/experiments/html&quot;,
+    &quot;test:experiments&quot;: &quot;node --test experiments/experiment.test.js&quot;
+  },
+  &quot;devDependencies&quot;: {
+    &quot;@playwright/test&quot;: &quot;1.64.1&quot;
+  }
+}
+</code></pre></details>
+<details id="source-automation/telemetry/schema.js"><summary>automation/telemetry/schema.js</summary><pre><code>import fs from &#x27;node:fs&#x27;
+import { FAILURE_TYPES } from &#x27;./taxonomy.js&#x27;
+
+const text = { type: &#x27;string&#x27; }
+const requiredText = { type: &#x27;string&#x27;, minLength: 1 }
+const date = { type: &#x27;string&#x27;, format: &#x27;date-time&#x27; }
+const uuid = { type: &#x27;string&#x27;, pattern: &#x27;^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$&#x27; }
+const path = { type: [&#x27;string&#x27;, &#x27;null&#x27;], pattern: &#x27;^artifacts/[A-Za-z0-9_./-]+$&#x27; }
+const statuses = [&#x27;PASS&#x27;, &#x27;FAIL&#x27;, &#x27;TIMED_OUT&#x27;, &#x27;SKIPPED&#x27;, &#x27;INTERRUPTED&#x27;]
+export const LEGACY_SCHEMA = JSON.parse(fs.readFileSync(new URL(&#x27;./record.v1.schema.json&#x27;, import.meta.url), &#x27;utf8&#x27;))
+export const LEGACY_COLUMNS = Object.freeze([...LEGACY_SCHEMA.required])
+export const EXPERIMENT_DEFAULTS = Object.freeze({
+  fault_type: &#x27;&#x27;, emulated: false, injected_at: null, mutation_version: &#x27;&#x27;,
+  expected_failure_type: null, injection_verified: false,
+})
+
+export const RECORD_SCHEMA = {
+  $schema: &#x27;https://json-schema.org/draft/2020-12/schema&#x27;,
+  title: &#x27;Playwright execution telemetry v2&#x27;,
+  type: &#x27;object&#x27;,
+  additionalProperties: false,
+  properties: {
+    schema_version: { const: 2 },
+    record_type: { enum: [&#x27;TEST_ATTEMPT&#x27;, &#x27;RUN_ERROR&#x27;] },
+    run_id: uuid,
+    attempt_id: uuid,
+    test_id: requiredText,
+    test_name: requiredText,
+    suite_name: requiredText,
+    browser: requiredText,
+    status: { enum: statuses },
+    failure_type: { enum: [null, ...FAILURE_TYPES] },
+    duration_ms: { type: &#x27;number&#x27;, minimum: 0 },
+    retry_count: { type: &#x27;integer&#x27;, minimum: 0 },
+    start_time: date,
+    end_time: date,
+    app_version: requiredText,
+    test_version: requiredText,
+    trace_path: path,
+    screenshot_path: path,
+    notes: text,
+    framework_version: requiredText,
+    playwright_version: requiredText,
+    timestamp: date,
+    environment: {
+      type: &#x27;object&#x27;, additionalProperties: false,
+      required: [&#x27;node_version&#x27;, &#x27;platform&#x27;, &#x27;architecture&#x27;, &#x27;os_release&#x27;, &#x27;hostname&#x27;, &#x27;ci&#x27;, &#x27;workers&#x27;, &#x27;git_commit&#x27;],
+      properties: {
+        node_version: requiredText, platform: requiredText, architecture: requiredText,
+        os_release: requiredText, hostname: requiredText, ci: { type: &#x27;boolean&#x27; },
+        workers: { type: &#x27;integer&#x27;, minimum: 0 }, git_commit: requiredText,
+      },
+    },
+    locator_mutation: text,
+    fault_variant: text,
+    experiment_id: text,
+    scenario_variant: text,
+    fault_type: text,
+    emulated: { type: &#x27;boolean&#x27; },
+    injected_at: { type: [&#x27;string&#x27;, &#x27;null&#x27;], format: &#x27;date-time&#x27; },
+    mutation_version: text,
+    expected_failure_type: { enum: [null, ...FAILURE_TYPES] },
+    injection_verified: { type: &#x27;boolean&#x27; },
+    expected_status: { enum: statuses },
+    classification_source: { enum: [&#x27;NONE&#x27;, &#x27;ANNOTATION&#x27;, &#x27;HEURISTIC&#x27;, &#x27;UNKNOWN&#x27;] },
+    failure_phase: { enum: [&#x27;test&#x27;, &#x27;setup&#x27;, &#x27;teardown&#x27;, &#x27;run&#x27;] },
+    error_message: text,
+    error_stack: text,
+    runtime_errors: { type: &#x27;array&#x27;, items: text },
+    project_name: requiredText,
+    worker_index: { type: &#x27;integer&#x27;, minimum: -1 },
+    repeat_index: { type: &#x27;integer&#x27;, minimum: 0 },
+  },
+}
+RECORD_SCHEMA.required = Object.keys(RECORD_SCHEMA.properties)
+export const CSV_COLUMNS = Object.freeze([...RECORD_SCHEMA.required])
+
+function validateValue(value, schema, name) {
+  if (&#x27;const&#x27; in schema &amp;&amp; value !== schema.const) throw new Error(`${name}: invalid constant`)
+  if (schema.enum &amp;&amp; !schema.enum.includes(value)) throw new Error(`${name}: invalid value ${value}`)
+  const types = schema.type ? [].concat(schema.type) : []
+  const type = value === null ? &#x27;null&#x27; : Array.isArray(value) ? &#x27;array&#x27; : typeof value
+  if (types.length &amp;&amp; !types.some(expected =&gt; expected === type || (expected === &#x27;integer&#x27; &amp;&amp; Number.isInteger(value)))) {
+    throw new Error(`${name}: expected ${types.join(&#x27;|&#x27;)}`)
+  }
+  if (typeof value === &#x27;number&#x27; &amp;&amp; (!Number.isFinite(value) || value &lt; (schema.minimum ?? -Infinity))) {
+    throw new Error(`${name}: invalid number`)
+  }
+  if (typeof value === &#x27;string&#x27;) {
+    if (value.length &lt; (schema.minLength ?? 0)) throw new Error(`${name}: empty value`)
+    if (schema.pattern &amp;&amp; !new RegExp(schema.pattern).test(value)) throw new Error(`${name}: invalid format`)
+    if (schema.format === &#x27;date-time&#x27; &amp;&amp; (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value) ||
+        !Number.isFinite(Date.parse(value)) || new Date(value).toISOString() !== value)) {
+      throw new Error(`${name}: expected UTC ISO timestamp`)
+    }
+  }
+  if (Array.isArray(value) &amp;&amp; schema.items) value.forEach((item, index) =&gt; validateValue(item, schema.items, `${name}[${index}]`))
+  if (schema.properties) {
+    for (const key of schema.required) {
+      if (!Object.hasOwn(value, key)) throw new Error(`${name}.${key}: required`)
+      validateValue(value[key], schema.properties[key], `${name}.${key}`)
+    }
+    if (schema.additionalProperties === false &amp;&amp; Object.keys(value).some(key =&gt; !Object.hasOwn(schema.properties, key))) {
+      throw new Error(`${name}: unknown field`)
+    }
+  }
+}
+
+export function validateRecord(record) {
+  validateValue(record, record?.schema_version === 1 ? LEGACY_SCHEMA : RECORD_SCHEMA, &#x27;record&#x27;)
+  const successful = [&#x27;PASS&#x27;, &#x27;SKIPPED&#x27;].includes(record.status)
+  if (successful !== (record.failure_type === null)) throw new Error(&#x27;status and failure_type are inconsistent&#x27;)
+  if ((record.failure_type === null) !== (record.classification_source === &#x27;NONE&#x27;)) throw new Error(&#x27;classification_source is inconsistent&#x27;)
+  const elapsed = Date.parse(record.end_time) - Date.parse(record.start_time)
+  if (elapsed &lt; 0 || Math.abs(elapsed - record.duration_ms) &gt; 1) throw new Error(&#x27;duration and timestamps are inconsistent&#x27;)
+  for (const key of [&#x27;trace_path&#x27;, &#x27;screenshot_path&#x27;]) {
+    if (record[key]?.split(&#x27;/&#x27;).includes(&#x27;..&#x27;)) throw new Error(`${key}: unsafe path`)
+  }
+  const environment = record.environment
+  for (const key of [&#x27;node_version&#x27;, &#x27;platform&#x27;, &#x27;architecture&#x27;, &#x27;os_release&#x27;, &#x27;hostname&#x27;]) {
+    if (typeof environment[key] !== &#x27;string&#x27; || !environment[key]) throw new Error(`environment.${key}: required`)
+  }
+  if (record.record_type === &#x27;RUN_ERROR&#x27; &amp;&amp; (record.test_id !== &#x27;__RUN__&#x27; || record.failure_phase !== &#x27;run&#x27;)) {
+    throw new Error(&#x27;RUN_ERROR must use the run-level identity and phase&#x27;)
+  }
+  if (record.schema_version === 2) {
+    if (record.injection_verified &amp;&amp; (!record.emulated || !record.injected_at || !record.experiment_id || !record.mutation_version)) {
+      throw new Error(&#x27;Verified emulated injections require experiment ID, mutation version, and injection time&#x27;)
+    }
+    if (record.injected_at &amp;&amp; !record.emulated) throw new Error(&#x27;injected_at requires emulated=true&#x27;)
+  }
+  // Environment and notes must remain serializable and reproducible in CSV.
+  JSON.stringify(record)
+  return record
+}
+
+export function validateHistory(records) {
+  if (!Array.isArray(records)) throw new Error(&#x27;History must be a JSON array&#x27;)
+  const ids = new Set()
+  for (const record of records) {
+    validateRecord(record)
+    if (ids.has(record.attempt_id)) throw new Error(`Duplicate attempt_id: ${record.attempt_id}`)
+    ids.add(record.attempt_id)
+  }
+  return records
+}
+
+export function upgradeRecord(record) {
+  validateRecord(record)
+  return record.schema_version === 2 ? record : validateRecord({ ...record, schema_version: 2, ...EXPERIMENT_DEFAULTS })
+}
+</code></pre></details>
+<details id="source-automation/telemetry/record.schema.json"><summary>automation/telemetry/record.schema.json</summary><pre><code>{
+  &quot;$schema&quot;: &quot;https://json-schema.org/draft/2020-12/schema&quot;,
+  &quot;title&quot;: &quot;Playwright execution telemetry v2&quot;,
+  &quot;type&quot;: &quot;object&quot;,
+  &quot;additionalProperties&quot;: false,
+  &quot;properties&quot;: {
+    &quot;schema_version&quot;: {
+      &quot;const&quot;: 2
+    },
+    &quot;record_type&quot;: {
+      &quot;enum&quot;: [
+        &quot;TEST_ATTEMPT&quot;,
+        &quot;RUN_ERROR&quot;
+      ]
+    },
+    &quot;run_id&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;pattern&quot;: &quot;^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$&quot;
+    },
+    &quot;attempt_id&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;pattern&quot;: &quot;^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$&quot;
+    },
+    &quot;test_id&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;test_name&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;suite_name&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;browser&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;status&quot;: {
+      &quot;enum&quot;: [
+        &quot;PASS&quot;,
+        &quot;FAIL&quot;,
+        &quot;TIMED_OUT&quot;,
+        &quot;SKIPPED&quot;,
+        &quot;INTERRUPTED&quot;
+      ]
+    },
+    &quot;failure_type&quot;: {
+      &quot;enum&quot;: [
+        null,
+        &quot;LOCATOR_NOT_FOUND&quot;,
+        &quot;LOCATOR_AMBIGUOUS&quot;,
+        &quot;ACTIONABILITY_FAILURE&quot;,
+        &quot;ASSERTION_MISMATCH&quot;,
+        &quot;STATE_CONSISTENCY_FAILURE&quot;,
+        &quot;APPLICATION_RUNTIME_ERROR&quot;,
+        &quot;SETUP_ENVIRONMENT_FAILURE&quot;,
+        &quot;UNKNOWN&quot;
+      ]
+    },
+    &quot;duration_ms&quot;: {
+      &quot;type&quot;: &quot;number&quot;,
+      &quot;minimum&quot;: 0
+    },
+    &quot;retry_count&quot;: {
+      &quot;type&quot;: &quot;integer&quot;,
+      &quot;minimum&quot;: 0
+    },
+    &quot;start_time&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;format&quot;: &quot;date-time&quot;
+    },
+    &quot;end_time&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;format&quot;: &quot;date-time&quot;
+    },
+    &quot;app_version&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;test_version&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;trace_path&quot;: {
+      &quot;type&quot;: [
+        &quot;string&quot;,
+        &quot;null&quot;
+      ],
+      &quot;pattern&quot;: &quot;^artifacts/[A-Za-z0-9_./-]+$&quot;
+    },
+    &quot;screenshot_path&quot;: {
+      &quot;type&quot;: [
+        &quot;string&quot;,
+        &quot;null&quot;
+      ],
+      &quot;pattern&quot;: &quot;^artifacts/[A-Za-z0-9_./-]+$&quot;
+    },
+    &quot;notes&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;framework_version&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;playwright_version&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;timestamp&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;format&quot;: &quot;date-time&quot;
+    },
+    &quot;environment&quot;: {
+      &quot;type&quot;: &quot;object&quot;,
+      &quot;additionalProperties&quot;: false,
+      &quot;required&quot;: [
+        &quot;node_version&quot;,
+        &quot;platform&quot;,
+        &quot;architecture&quot;,
+        &quot;os_release&quot;,
+        &quot;hostname&quot;,
+        &quot;ci&quot;,
+        &quot;workers&quot;,
+        &quot;git_commit&quot;
+      ],
+      &quot;properties&quot;: {
+        &quot;node_version&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;minLength&quot;: 1
+        },
+        &quot;platform&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;minLength&quot;: 1
+        },
+        &quot;architecture&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;minLength&quot;: 1
+        },
+        &quot;os_release&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;minLength&quot;: 1
+        },
+        &quot;hostname&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;minLength&quot;: 1
+        },
+        &quot;ci&quot;: {
+          &quot;type&quot;: &quot;boolean&quot;
+        },
+        &quot;workers&quot;: {
+          &quot;type&quot;: &quot;integer&quot;,
+          &quot;minimum&quot;: 0
+        },
+        &quot;git_commit&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;minLength&quot;: 1
+        }
+      }
+    },
+    &quot;locator_mutation&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;fault_variant&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;experiment_id&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;scenario_variant&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;fault_type&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;emulated&quot;: {
+      &quot;type&quot;: &quot;boolean&quot;
+    },
+    &quot;injected_at&quot;: {
+      &quot;type&quot;: [
+        &quot;string&quot;,
+        &quot;null&quot;
+      ],
+      &quot;format&quot;: &quot;date-time&quot;
+    },
+    &quot;mutation_version&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;expected_failure_type&quot;: {
+      &quot;enum&quot;: [
+        null,
+        &quot;LOCATOR_NOT_FOUND&quot;,
+        &quot;LOCATOR_AMBIGUOUS&quot;,
+        &quot;ACTIONABILITY_FAILURE&quot;,
+        &quot;ASSERTION_MISMATCH&quot;,
+        &quot;STATE_CONSISTENCY_FAILURE&quot;,
+        &quot;APPLICATION_RUNTIME_ERROR&quot;,
+        &quot;SETUP_ENVIRONMENT_FAILURE&quot;,
+        &quot;UNKNOWN&quot;
+      ]
+    },
+    &quot;injection_verified&quot;: {
+      &quot;type&quot;: &quot;boolean&quot;
+    },
+    &quot;expected_status&quot;: {
+      &quot;enum&quot;: [
+        &quot;PASS&quot;,
+        &quot;FAIL&quot;,
+        &quot;TIMED_OUT&quot;,
+        &quot;SKIPPED&quot;,
+        &quot;INTERRUPTED&quot;
+      ]
+    },
+    &quot;classification_source&quot;: {
+      &quot;enum&quot;: [
+        &quot;NONE&quot;,
+        &quot;ANNOTATION&quot;,
+        &quot;HEURISTIC&quot;,
+        &quot;UNKNOWN&quot;
+      ]
+    },
+    &quot;failure_phase&quot;: {
+      &quot;enum&quot;: [
+        &quot;test&quot;,
+        &quot;setup&quot;,
+        &quot;teardown&quot;,
+        &quot;run&quot;
+      ]
+    },
+    &quot;error_message&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;error_stack&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;runtime_errors&quot;: {
+      &quot;type&quot;: &quot;array&quot;,
+      &quot;items&quot;: {
+        &quot;type&quot;: &quot;string&quot;
+      }
+    },
+    &quot;project_name&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;worker_index&quot;: {
+      &quot;type&quot;: &quot;integer&quot;,
+      &quot;minimum&quot;: -1
+    },
+    &quot;repeat_index&quot;: {
+      &quot;type&quot;: &quot;integer&quot;,
+      &quot;minimum&quot;: 0
+    }
+  },
+  &quot;required&quot;: [
+    &quot;schema_version&quot;,
+    &quot;record_type&quot;,
+    &quot;run_id&quot;,
+    &quot;attempt_id&quot;,
+    &quot;test_id&quot;,
+    &quot;test_name&quot;,
+    &quot;suite_name&quot;,
+    &quot;browser&quot;,
+    &quot;status&quot;,
+    &quot;failure_type&quot;,
+    &quot;duration_ms&quot;,
+    &quot;retry_count&quot;,
+    &quot;start_time&quot;,
+    &quot;end_time&quot;,
+    &quot;app_version&quot;,
+    &quot;test_version&quot;,
+    &quot;trace_path&quot;,
+    &quot;screenshot_path&quot;,
+    &quot;notes&quot;,
+    &quot;framework_version&quot;,
+    &quot;playwright_version&quot;,
+    &quot;timestamp&quot;,
+    &quot;environment&quot;,
+    &quot;locator_mutation&quot;,
+    &quot;fault_variant&quot;,
+    &quot;experiment_id&quot;,
+    &quot;scenario_variant&quot;,
+    &quot;fault_type&quot;,
+    &quot;emulated&quot;,
+    &quot;injected_at&quot;,
+    &quot;mutation_version&quot;,
+    &quot;expected_failure_type&quot;,
+    &quot;injection_verified&quot;,
+    &quot;expected_status&quot;,
+    &quot;classification_source&quot;,
+    &quot;failure_phase&quot;,
+    &quot;error_message&quot;,
+    &quot;error_stack&quot;,
+    &quot;runtime_errors&quot;,
+    &quot;project_name&quot;,
+    &quot;worker_index&quot;,
+    &quot;repeat_index&quot;
+  ]
+}
+</code></pre></details>
+<details id="source-automation/telemetry/metadata.js"><summary>automation/telemetry/metadata.js</summary><pre><code>import fs from &#x27;node:fs&#x27;
+import path from &#x27;node:path&#x27;
+import os from &#x27;node:os&#x27;
+import { createHash, randomUUID } from &#x27;node:crypto&#x27;
+import { fileURLToPath } from &#x27;node:url&#x27;
+import { createRequire } from &#x27;node:module&#x27;
+import { execFileSync } from &#x27;node:child_process&#x27;
+
+const require = createRequire(import.meta.url)
+export const AUTOMATION_ROOT = fileURLToPath(new URL(&#x27;..&#x27;, import.meta.url))
+export const PROJECT_ROOT = path.dirname(AUTOMATION_ROOT)
+export const EXPERIMENT_FIELDS = Object.freeze([
+  &#x27;locator_mutation&#x27;, &#x27;fault_variant&#x27;, &#x27;experiment_id&#x27;, &#x27;scenario_variant&#x27;,
+  &#x27;fault_type&#x27;, &#x27;emulated&#x27;, &#x27;injected_at&#x27;, &#x27;mutation_version&#x27;, &#x27;expected_failure_type&#x27;, &#x27;injection_verified&#x27;,
+])
+
+function sourceHash(root, entries) {
+  const hash = createHash(&#x27;sha256&#x27;)
+  function visit(relative) {
+    const file = path.join(root, relative)
+    if (!fs.existsSync(file)) return
+    const stat = fs.lstatSync(file)
+    if (stat.isDirectory()) for (const name of fs.readdirSync(file).sort()) visit(path.join(relative, name))
+    else if (stat.isFile()) hash.update(relative.split(path.sep).join(&#x27;/&#x27;) + &#x27;\0&#x27;).update(fs.readFileSync(file)).update(&#x27;\0&#x27;)
+  }
+  for (const entry of [...entries].sort()) visit(entry)
+  return hash.digest(&#x27;hex&#x27;)
+}
+
+export function createRunMetadata(config) {
+  const automationPackage = JSON.parse(fs.readFileSync(path.join(AUTOMATION_ROOT, &#x27;package.json&#x27;), &#x27;utf8&#x27;))
+  const appPackage = JSON.parse(fs.readFileSync(path.join(PROJECT_ROOT, &#x27;frontend/package.json&#x27;), &#x27;utf8&#x27;))
+  let commit = &#x27;unknown&#x27;
+  try { commit = execFileSync(&#x27;git&#x27;, [&#x27;rev-parse&#x27;, &#x27;HEAD&#x27;], { cwd: PROJECT_ROOT, encoding: &#x27;utf8&#x27;, stdio: [&#x27;ignore&#x27;, &#x27;pipe&#x27;, &#x27;ignore&#x27;] }).trim() }
+  catch { /* Source fingerprints still identify uncommitted or non-Git checkouts. */ }
+  return {
+    run_id: randomUUID(),
+    timestamp: new Date().toISOString(),
+    app_version: `${appPackage.version}+sha256:${sourceHash(path.join(PROJECT_ROOT, &#x27;frontend&#x27;), [&#x27;src&#x27;, &#x27;package.json&#x27;, &#x27;package-lock.json&#x27;, &#x27;vite.config.js&#x27;, &#x27;index.html&#x27;, &#x27;public&#x27;])}`,
+    test_version: `${automationPackage.version}+sha256:${sourceHash(AUTOMATION_ROOT, [&#x27;pages&#x27;, &#x27;tests&#x27;, &#x27;fixtures&#x27;, &#x27;utils&#x27;, &#x27;telemetry&#x27;, &#x27;experiments&#x27;, &#x27;playwright.config.js&#x27;, &#x27;package.json&#x27;, &#x27;package-lock.json&#x27;])}`,
+    framework_version: automationPackage.version,
+    playwright_version: require(&#x27;@playwright/test/package.json&#x27;).version,
+    environment: {
+      node_version: process.version, platform: process.platform, architecture: process.arch,
+      os_release: os.release(), hostname: os.hostname(), ci: Boolean(process.env.CI),
+      workers: config.workers, git_commit: commit,
+    },
+  }
+}
+
+export function testIdentity(test) {
+  const explicit = test.title.match(/^([A-Z][A-Z0-9_]*-\d+)\b/)
+  if (explicit) return explicit[1]
+  // Fallback is deterministic, but renaming/moving an unnumbered test changes this ID.
+  const key = [path.relative(PROJECT_ROOT, test.location.file).split(path.sep).join(&#x27;/&#x27;), ...describePath(test), test.title].join(&#x27;::&#x27;)
+  return `AUTO-${createHash(&#x27;sha256&#x27;).update(key).digest(&#x27;hex&#x27;)}`
+}
+
+export function describePath(test) {
+  const names = []
+  for (let suite = test.parent; suite; suite = suite.parent) if (suite.type === &#x27;describe&#x27;) names.unshift(suite.title)
+  return names
+}
+
+export function experimentMetadata(annotations = []) {
+  const result = Object.fromEntries(EXPERIMENT_FIELDS.map(field =&gt; [field,
+    annotations.findLast(annotation =&gt; annotation.type === field)?.description ?? process.env[field.toUpperCase()] ?? &#x27;&#x27;,
+  ]))
+  for (const key of [&#x27;emulated&#x27;, &#x27;injection_verified&#x27;]) {
+    if (![&#x27;&#x27;, &#x27;true&#x27;, &#x27;false&#x27;].includes(result[key])) throw new Error(`${key} must be true or false`)
+    result[key] = result[key] === &#x27;true&#x27;
+  }
+  result.injected_at ||= null
+  result.expected_failure_type ||= null
+  return result
+}
+</code></pre></details>
+<details id="source-automation/telemetry/TelemetryReporter.js"><summary>automation/telemetry/TelemetryReporter.js</summary><pre><code>import fs from &#x27;node:fs&#x27;
+import path from &#x27;node:path&#x27;
+import { randomUUID } from &#x27;node:crypto&#x27;
+import { fileURLToPath } from &#x27;node:url&#x27;
+import { HistoryStore, atomicWrite } from &#x27;./history.js&#x27;
+import { validateRecord } from &#x27;./schema.js&#x27;
+import { STATUS_MAP, classifyFailure, failurePhase } from &#x27;./taxonomy.js&#x27;
+import { createRunMetadata, testIdentity, describePath, experimentMetadata } from &#x27;./metadata.js&#x27;
+
+export default class TelemetryReporter {
+  constructor(options = {}) {
+    this.directory = path.resolve(process.env.TELEMETRY_DIR || options.directory || fileURLToPath(new URL(&#x27;../../dataset&#x27;, import.meta.url)))
+    this.store = new HistoryStore(this.directory)
+    this.attempts = new WeakMap()
+    this.completed = 0
+    this.runErrors = 0
+    this.listOnly = process.argv.includes(&#x27;--list&#x27;)
+  }
+
+  printsToStdio() { return false }
+
+  guard(action) {
+    if (this.listOnly || this.fatalError) return
+    try { action() }
+    catch (error) {
+      this.fatalError = error
+      process.stderr.write(`[telemetry] ${error.message}\n`)
+    }
+  }
+
+  ensureRun(config = { workers: 0 }) {
+    if (this.metadata) return
+    this.metadata = createRunMetadata(config)
+    this.manifest = path.join(this.directory, &#x27;runs&#x27;, this.metadata.run_id, &#x27;run.json&#x27;)
+    this.store.validate()
+    this.writeManifest(&#x27;RUNNING&#x27;)
+  }
+
+  writeManifest(status, extra = {}) {
+    atomicWrite(this.manifest, JSON.stringify({ ...this.metadata,
+      status, expected_tests: this.expectedTests ?? 0,
+      completed_attempts: this.completed, run_errors: this.runErrors,
+      telemetry_error: this.fatalError?.message ?? null, ...extra,
+    }, null, 2) + &#x27;\n&#x27;)
+  }
+
+  onBegin(config, suite) {
+    this.guard(() =&gt; {
+      this.expectedTests = suite.allTests().length
+      this.ensureRun(config)
+      const identities = new Map()
+      for (const test of suite.allTests()) {
+        const id = testIdentity(test)
+        const identity = `${test.location.file}::${describePath(test).join(&#x27;::&#x27;)}::${test.title}`
+        if (identities.has(id) &amp;&amp; identities.get(id) !== identity) throw new Error(`Duplicate test_id: ${id}`)
+        identities.set(id, identity)
+      }
+      this.writeManifest(&#x27;RUNNING&#x27;)
+    })
+  }
+
+  attempt(result) {
+    let attempt = this.attempts.get(result)
+    if (!attempt) {
+      attempt = { id: randomUUID(), failedStep: null }
+      this.attempts.set(result, attempt)
+    }
+    return attempt
+  }
+
+  onTestBegin(_test, result) {
+    this.guard(() =&gt; { this.attempt(result) })
+  }
+
+  onStepEnd(_test, result, step) {
+    this.guard(() =&gt; {
+      const attempt = this.attempt(result)
+      if (step.error &amp;&amp; !attempt.failedStep) {
+        attempt.failedStep = { title: step.title, category: step.category, phase: failurePhase(step) }
+      }
+    })
+  }
+
+  readRuntimeErrors(attachments) {
+    const attachment = attachments.find(item =&gt; item.name === &#x27;telemetry-runtime-errors&#x27;)
+    if (!attachment) return []
+    return JSON.parse(attachment.body ? attachment.body.toString(&#x27;utf8&#x27;) : fs.readFileSync(attachment.path, &#x27;utf8&#x27;))
+  }
+
+  archiveArtifacts(attachments, attemptId) {
+    const result = { trace_path: null, screenshot_path: null }
+    for (const [key, matches, extension] of [
+      [&#x27;trace_path&#x27;, item =&gt; item.name === &#x27;trace&#x27;, &#x27;.zip&#x27;],
+      [&#x27;screenshot_path&#x27;, item =&gt; item.name === &#x27;screenshot&#x27; &amp;&amp; item.contentType.startsWith(&#x27;image/&#x27;), &#x27;.png&#x27;],
+    ]) {
+      const attachment = attachments.find(matches)
+      if (!attachment) continue
+      const relative = `artifacts/${this.metadata.run_id}/${attemptId}/${key === &#x27;trace_path&#x27; ? &#x27;trace&#x27; : &#x27;screenshot&#x27;}${extension}`
+      const destination = path.join(this.directory, relative)
+      fs.mkdirSync(path.dirname(destination), { recursive: true })
+      if (attachment.path) fs.copyFileSync(attachment.path, destination)
+      else if (attachment.body) fs.writeFileSync(destination, attachment.body)
+      else throw new Error(`Artifact ${attachment.name} has no content`)
+      result[key] = relative
+    }
+    return result
+  }
+
+  onTestEnd(test, result) {
+    this.guard(() =&gt; {
+      this.ensureRun()
+      const attempt = this.attempt(result)
+      const annotations = result.annotations ?? test.annotations ?? []
+      const status = STATUS_MAP[result.status]
+      const errors = result.errors?.length ? result.errors : result.error ? [result.error] : []
+      const runtimeErrors = this.readRuntimeErrors(result.attachments)
+      const phase = attempt.failedStep?.phase ?? &#x27;test&#x27;
+      const classification = classifyFailure({ status, errors, phase,
+        category: attempt.failedStep?.category, runtimeErrors,
+        annotation: annotations.findLast(item =&gt; item.type === &#x27;failure_type&#x27;)?.description,
+      })
+      const project = test.parent.project()
+      const start = result.startTime.toISOString()
+      const row = {
+        schema_version: 2, record_type: &#x27;TEST_ATTEMPT&#x27;,
+        ...this.metadata,
+        attempt_id: attempt.id,
+        test_id: testIdentity(test), test_name: test.title,
+        suite_name: describePath(test).join(&#x27; &gt; &#x27;) || path.basename(test.location.file),
+        browser: project?.use.browserName || project?.use.defaultBrowserType || &#x27;chromium&#x27;,
+        status, failure_type: classification.type,
+        duration_ms: result.duration, retry_count: result.retry,
+        start_time: start, end_time: new Date(result.startTime.getTime() + result.duration).toISOString(),
+        trace_path: null, screenshot_path: null,
+        notes: [
+          ...annotations.filter(item =&gt; item.type === &#x27;telemetry_note&#x27;).map(item =&gt; item.description ?? &#x27;&#x27;),
+          ...(classification.source === &#x27;HEURISTIC&#x27; ? [&#x27;Observed failure symptom; heuristic classification is not ground-truth root cause.&#x27;] : []),
+          ...(runtimeErrors.length ? [&#x27;Page runtime errors observed; see runtime_errors.&#x27;] : []),
+          ...(attempt.failedStep ? [`Failed step: ${attempt.failedStep.title}`] : []),
+        ].join(&#x27;\n&#x27;),
+        ...experimentMetadata(annotations),
+        expected_status: STATUS_MAP[test.expectedStatus],
+        classification_source: classification.source, failure_phase: phase,
+        error_message: errors.map(error =&gt; error.message || error.value || &#x27;&#x27;).join(&#x27;\n&#x27;),
+        error_stack: errors.map(error =&gt; error.stack || &#x27;&#x27;).join(&#x27;\n&#x27;),
+        runtime_errors: runtimeErrors,
+        project_name: project?.name || &#x27;default&#x27;, worker_index: result.workerIndex,
+        repeat_index: test.repeatEachIndex ?? 0,
+      }
+      validateRecord(row)
+      Object.assign(row, this.archiveArtifacts(result.attachments, attempt.id))
+      this.store.append(row)
+      this.completed++
+      this.writeManifest(&#x27;RUNNING&#x27;)
+    })
+  }
+
+  onError(error) {
+    this.guard(() =&gt; {
+      this.ensureRun()
+      const time = new Date().toISOString()
+      const row = {
+        schema_version: 2, record_type: &#x27;RUN_ERROR&#x27;, ...this.metadata,
+        attempt_id: randomUUID(), test_id: &#x27;__RUN__&#x27;, test_name: &#x27;Run-level error&#x27;, suite_name: &#x27;Run lifecycle&#x27;,
+        browser: &#x27;runner&#x27;, status: &#x27;FAIL&#x27;, failure_type: &#x27;SETUP_ENVIRONMENT_FAILURE&#x27;,
+        duration_ms: 0, retry_count: 0, start_time: time, end_time: time,
+        trace_path: null, screenshot_path: null,
+        notes: &#x27;Runner error, not attributed to an individual test. Exclude RUN_ERROR rows from test-attempt modeling.&#x27;,
+        ...experimentMetadata(), expected_status: &#x27;PASS&#x27;, classification_source: &#x27;HEURISTIC&#x27;, failure_phase: &#x27;run&#x27;,
+        error_message: error.message || error.value || &#x27;Unspecified runner error&#x27;, error_stack: error.stack || &#x27;&#x27;,
+        runtime_errors: [], project_name: &#x27;runner&#x27;, worker_index: -1, repeat_index: 0,
+      }
+      this.store.append(row)
+      this.runErrors++
+      this.writeManifest(&#x27;RUNNING&#x27;)
+    })
+  }
+
+  async onEnd(result) {
+    if (this.listOnly) return
+    this.guard(() =&gt; {
+      this.ensureRun()
+      this.store.validate()
+      this.writeManifest(result.status.toUpperCase(), { end_time: new Date().toISOString() })
+    })
+    if (this.fatalError) {
+      // Playwright swallows reporter exceptions; explicitly fail the runner instead.
+      try { if (this.manifest) this.writeManifest(&#x27;TELEMETRY_ERROR&#x27;) } catch { /* Original error was already printed. */ }
+      return { status: &#x27;failed&#x27; }
+    }
+  }
+}
+</code></pre></details>
+<details id="source-automation/telemetry/history.js"><summary>automation/telemetry/history.js</summary><pre><code>import fs from &#x27;node:fs&#x27;
+import path from &#x27;node:path&#x27;
+import os from &#x27;node:os&#x27;
+import { randomUUID, createHash } from &#x27;node:crypto&#x27;
+import { CSV_COLUMNS, LEGACY_COLUMNS, validateHistory, validateRecord, upgradeRecord } from &#x27;./schema.js&#x27;
+
+export function atomicWrite(file, content) {
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  const temporary = `${file}.${randomUUID()}.tmp`
+  const fd = fs.openSync(temporary, &#x27;wx&#x27;, 0o600)
+  try {
+    fs.writeFileSync(fd, content)
+    fs.fsyncSync(fd)
+  } finally { fs.closeSync(fd) }
+  try { fs.renameSync(temporary, file) }
+  finally { if (fs.existsSync(temporary)) fs.unlinkSync(temporary) }
+}
+
+function csvCell(value) {
+  const text = value === null ? &#x27;&#x27; : typeof value === &#x27;object&#x27; ? JSON.stringify(value) : String(value)
+  return /[&quot;,\r\n]/.test(text) ? `&quot;${text.replaceAll(&#x27;&quot;&#x27;, &#x27;&quot;&quot;&#x27;)}&quot;` : text
+}
+
+export function serializeCSV(records) {
+  const version = records[0]?.schema_version ?? 2
+  if (records.some(record =&gt; record.schema_version !== version)) throw new Error(&#x27;Mixed schema versions require migration&#x27;)
+  const columns = version === 1 ? LEGACY_COLUMNS : CSV_COLUMNS
+  return [columns.join(&#x27;,&#x27;), ...records.map(record =&gt; columns.map(column =&gt; csvCell(record[column])).join(&#x27;,&#x27;))].join(&#x27;\r\n&#x27;) + &#x27;\r\n&#x27;
+}
+
+export class HistoryStore {
+  constructor(directory) {
+    this.directory = path.resolve(directory)
+    this.json = path.join(this.directory, &#x27;execution-history.json&#x27;)
+    this.csv = path.join(this.directory, &#x27;test-history.csv&#x27;)
+    this.pending = path.join(this.directory, &#x27;.history-pending.json&#x27;)
+    this.lock = path.join(this.directory, &#x27;.history-lock&#x27;)
+  }
+
+  withLock(action) {
+    fs.mkdirSync(this.directory, { recursive: true })
+    const deadline = Date.now() + 5_000
+    while (true) {
+      try { fs.mkdirSync(this.lock); break }
+      catch (error) {
+        if (error.code !== &#x27;EEXIST&#x27;) throw error
+        let ownerDescription = &#x27;owner metadata unavailable&#x27;
+        try {
+          const owner = JSON.parse(fs.readFileSync(path.join(this.lock, &#x27;owner.json&#x27;), &#x27;utf8&#x27;))
+          ownerDescription = `PID ${owner.pid} on ${owner.hostname}`
+        } catch { /* A writer can be between mkdir and writing owner metadata. */ }
+        if (Date.now() &gt;= deadline) {
+          throw new Error(`History lock held (${ownerDescription}). If a runner crashed, confirm it has exited before removing ${this.lock}; journal recovery runs on the next access.`)
+        }
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20)
+      }
+    }
+    try {
+      fs.writeFileSync(path.join(this.lock, &#x27;owner.json&#x27;), JSON.stringify({ pid: process.pid, hostname: os.hostname() }))
+      return action()
+    } finally { fs.rmSync(this.lock, { recursive: true, force: true }) }
+  }
+
+  writeSnapshot(records) {
+    atomicWrite(this.json, JSON.stringify(records, null, 2) + &#x27;\n&#x27;)
+    atomicWrite(this.csv, serializeCSV(records))
+  }
+
+  recover() {
+    if (!fs.existsSync(this.pending)) return
+    const records = validateHistory(JSON.parse(fs.readFileSync(this.pending, &#x27;utf8&#x27;)))
+    this.writeSnapshot(records)
+    fs.unlinkSync(this.pending)
+  }
+
+  readUnlocked() {
+    this.recover()
+    if (!fs.existsSync(this.json)) {
+      if (fs.existsSync(this.csv)) throw new Error(&#x27;CSV exists without authoritative JSON history&#x27;)
+      return []
+    }
+    const records = validateHistory(JSON.parse(fs.readFileSync(this.json, &#x27;utf8&#x27;)))
+    if (!fs.existsSync(this.csv) || fs.readFileSync(this.csv, &#x27;utf8&#x27;) !== serializeCSV(records)) {
+      throw new Error(&#x27;JSON and CSV are inconsistent; refusing to overwrite existing history&#x27;)
+    }
+    return records
+  }
+
+  append(record) {
+    validateRecord(record)
+    if (record.schema_version !== 2) throw new Error(&#x27;New records must use schema v2&#x27;)
+    return this.withLock(() =&gt; {
+      const records = this.readUnlocked()
+      if (records.some(item =&gt; item.schema_version !== 2)) throw new Error(&#x27;Run npm run telemetry:migrate before appending to schema v1 history&#x27;)
+      const existing = records.find(item =&gt; item.attempt_id === record.attempt_id)
+      if (existing) {
+        if (JSON.stringify(existing) !== JSON.stringify(record)) throw new Error(&#x27;Conflicting duplicate attempt_id&#x27;)
+        return false
+      }
+      records.push(record)
+      // Write-ahead journal repairs interrupted two-file publication on the next access.
+      atomicWrite(this.pending, JSON.stringify(records))
+      this.writeSnapshot(records)
+      fs.unlinkSync(this.pending)
+      return true
+    })
+  }
+
+
+  migrate() {
+    return this.withLock(() =&gt; {
+      const records = this.readUnlocked()
+      if (!records.some(record =&gt; record.schema_version === 1)) return { migrated: 0, backup: null }
+      const backup = path.join(this.directory, &#x27;migrations&#x27;, randomUUID())
+      fs.mkdirSync(backup, { recursive: true })
+      fs.copyFileSync(this.json, path.join(backup, &#x27;execution-history.v1.json&#x27;))
+      fs.copyFileSync(this.csv, path.join(backup, &#x27;test-history.v1.csv&#x27;))
+      const next = records.map(upgradeRecord)
+      atomicWrite(this.pending, JSON.stringify(next))
+      this.writeSnapshot(next)
+      fs.unlinkSync(this.pending)
+      atomicWrite(path.join(backup, &#x27;migration.json&#x27;), JSON.stringify({
+        from: 1, to: 2, count: records.length, migrated_at: new Date().toISOString(),
+        original_sha256: createHash(&#x27;sha256&#x27;).update(fs.readFileSync(path.join(backup, &#x27;execution-history.v1.json&#x27;))).digest(&#x27;hex&#x27;),
+      }, null, 2) + &#x27;\n&#x27;)
+      return { migrated: records.length, backup }
+    })
+  }
+
+  validate() {
+    return this.withLock(() =&gt; {
+      const records = this.readUnlocked()
+      for (const record of records) {
+        for (const key of [&#x27;trace_path&#x27;, &#x27;screenshot_path&#x27;]) {
+          if (record[key] &amp;&amp; !fs.existsSync(path.join(this.directory, record[key]))) throw new Error(`Missing artifact: ${record[key]}`)
+        }
+      }
+      return records
+    })
+  }
+}
+</code></pre></details>
+<details id="source-automation/telemetry/telemetry.test.js"><summary>automation/telemetry/telemetry.test.js</summary><pre><code>import test from &#x27;node:test&#x27;
+import assert from &#x27;node:assert/strict&#x27;
+import fs from &#x27;node:fs&#x27;
+import os from &#x27;node:os&#x27;
+import path from &#x27;node:path&#x27;
+import { randomUUID } from &#x27;node:crypto&#x27;
+import { execFile } from &#x27;node:child_process&#x27;
+import { promisify } from &#x27;node:util&#x27;
+import { fileURLToPath } from &#x27;node:url&#x27;
+import TelemetryReporter from &#x27;./TelemetryReporter.js&#x27;
+import { RECORD_SCHEMA, CSV_COLUMNS, validateRecord } from &#x27;./schema.js&#x27;
+import { FAILURE_TYPES, classifyFailure } from &#x27;./taxonomy.js&#x27;
+import { HistoryStore, atomicWrite, serializeCSV } from &#x27;./history.js&#x27;
+import { createRunMetadata, testIdentity, experimentMetadata } from &#x27;./metadata.js&#x27;
+
+const metadata = createRunMetadata({ workers: 2 })
+function record(overrides = {}) {
+  return {
+    schema_version: 2, record_type: &#x27;TEST_ATTEMPT&#x27;, ...metadata,
+    attempt_id: randomUUID(), test_id: &#x27;TEST-001&#x27;, test_name: &#x27;TEST-001 sample&#x27;, suite_name: &#x27;Telemetry&#x27;, browser: &#x27;chromium&#x27;,
+    status: &#x27;PASS&#x27;, failure_type: null, duration_ms: 5, retry_count: 0,
+    start_time: &#x27;2026-10-19T10:00:00.000Z&#x27;, end_time: &#x27;2026-10-19T10:00:00.005Z&#x27;,
+    trace_path: null, screenshot_path: null, notes: &#x27;&#x27;,
+    ...experimentMetadata(),
+    expected_status: &#x27;PASS&#x27;, classification_source: &#x27;NONE&#x27;, failure_phase: &#x27;test&#x27;, error_message: &#x27;&#x27;, error_stack: &#x27;&#x27;,
+    runtime_errors: [], project_name: &#x27;chromium&#x27;, worker_index: 0, repeat_index: 0,
+    ...overrides,
+  }
+}
+function temporary(t) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), &#x27;sut-telemetry-&#x27;))
+  t.after(() =&gt; fs.rmSync(directory, { recursive: true, force: true }))
+  return directory
+}
+function fakeTest(title = &#x27;TEST-001 sample&#x27;) {
+  return {
+    title, annotations: [], expectedStatus: &#x27;passed&#x27;, repeatEachIndex: 0,
+    location: { file: fileURLToPath(new URL(&#x27;../tests/login.spec.js&#x27;, import.meta.url)), line: 1 },
+    parent: { title: &#x27;Demo&#x27;, type: &#x27;describe&#x27;, project: () =&gt; ({ name: &#x27;chromium&#x27;, use: { browserName: &#x27;chromium&#x27; } }) },
+  }
+}
+function fakeResult(overrides = {}) {
+  return { startTime: new Date(&#x27;2026-10-19T10:00:00.000Z&#x27;), duration: 5, retry: 0, status: &#x27;passed&#x27;,
+    errors: [], attachments: [], workerIndex: 0, ...overrides }
+}
+function begin(reporter, candidate = fakeTest()) {
+  reporter.onBegin({ workers: 2 }, { allTests: () =&gt; [candidate] })
+  return candidate
+}
+
+// This parser is a test oracle for CSV quoting, not part of production ingestion.
+function parseCSV(text) {
+  const rows = []; let row = []; let cell = &#x27;&#x27;; let quoted = false
+  for (let i = 0; i &lt; text.length; i++) {
+    const character = text[i]
+    if (character === &#x27;&quot;&#x27;) {
+      if (quoted &amp;&amp; text[i + 1] === &#x27;&quot;&#x27;) { cell += &#x27;&quot;&#x27;; i++ }
+      else quoted = !quoted
+    } else if (!quoted &amp;&amp; character === &#x27;,&#x27;) { row.push(cell); cell = &#x27;&#x27; }
+    else if (!quoted &amp;&amp; character === &#x27;\r&#x27; &amp;&amp; text[i + 1] === &#x27;\n&#x27;) {
+      row.push(cell); rows.push(row); row = []; cell = &#x27;&#x27;; i++
+    } else cell += character
+  }
+  return rows
+}
+
+test(&#x27;schema JSON and runtime validator describe the same canonical record&#x27;, () =&gt; {
+  const saved = JSON.parse(fs.readFileSync(new URL(&#x27;./record.schema.json&#x27;, import.meta.url)))
+  assert.deepEqual(saved, RECORD_SCHEMA)
+  assert.equal(validateRecord(record()).failure_type, null)
+})
+
+test(&#x27;all canonical fields are mandatory, including empty experiment fields&#x27;, () =&gt; {
+  for (const key of CSV_COLUMNS) {
+    const row = record(); delete row[key]
+    assert.throws(() =&gt; validateRecord(row), undefined, key)
+  }
+})
+
+test(&#x27;schema rejects invalid types, statuses, chronology, paths, and unknown fields&#x27;, () =&gt; {
+  for (const changes of [
+    { duration_ms: -1 }, { duration_ms: NaN }, { retry_count: 1.5 }, { status: &#x27;GREEN&#x27; },
+    { failure_type: &#x27;NONE&#x27; }, { failure_type: &#x27;LOCATOR_NOT_FOUND&#x27; },
+    { end_time: &#x27;2026-10-19T09:00:00.000Z&#x27; }, { duration_ms: 500 },
+    { start_time: &#x27;2026-02-30T10:00:00.000Z&#x27; },
+    { screenshot_path: &#x27;artifacts/../../outside.png&#x27; }, { trace_path: &#x27;/absolute/trace.zip&#x27; },
+    { extra: true }, { environment: {} }, { attempt_id: &#x27;&#x27; },
+  ]) assert.throws(() =&gt; validateRecord(record(changes)))
+})
+
+test(&#x27;taxonomy is frozen and passing business validations have no failure type&#x27;, () =&gt; {
+  assert.ok(Object.isFrozen(FAILURE_TYPES))
+  assert.equal(FAILURE_TYPES.length, 8)
+  assert.deepEqual(classifyFailure({ status: &#x27;PASS&#x27;, errors: [{ message: &#x27;Invalid coupon code.&#x27; }] }), { type: null, source: &#x27;NONE&#x27; })
+})
+
+for (const [type, options] of [
+  [&#x27;LOCATOR_AMBIGUOUS&#x27;, { errors: [{ message: &#x27;strict mode violation: resolved to 2 elements&#x27; }] }],
+  [&#x27;LOCATOR_NOT_FOUND&#x27;, { errors: [{ message: &#x27;locator.click: Timeout 100ms exceeded.\nCall log:\n - waiting for getByRole(\&#x27;button\&#x27;)&#x27; }] }],
+  [&#x27;ACTIONABILITY_FAILURE&#x27;, { errors: [{ message: &#x27;element is not visible&#x27; }] }],
+  [&#x27;ASSERTION_MISMATCH&#x27;, { errors: [{ message: &#x27;expect(locator).toHaveText(expected) failed&#x27; }] }],
+  [&#x27;APPLICATION_RUNTIME_ERROR&#x27;, { runtimeErrors: [&#x27;TypeError: render failed&#x27;] }],
+  [&#x27;SETUP_ENVIRONMENT_FAILURE&#x27;, { phase: &#x27;setup&#x27;, errors: [{ message: &#x27;beforeEach failed&#x27; }] }],
+  [&#x27;STATE_CONSISTENCY_FAILURE&#x27;, { annotation: &#x27;STATE_CONSISTENCY_FAILURE&#x27; }],
+  [&#x27;UNKNOWN&#x27;, { errors: [{ message: &#x27;Timeout with insufficient evidence&#x27; }] }],
+]) {
+  test(`classification supports ${type} without conflating it with status`, () =&gt; {
+    assert.equal(classifyFailure({ status: &#x27;FAIL&#x27;, ...options }).type, type)
+  })
+}
+
+test(&#x27;assertion timeout is not automatically a missing locator&#x27;, () =&gt; {
+  assert.equal(classifyFailure({ status: &#x27;TIMED_OUT&#x27;, category: &#x27;expect&#x27;, errors: [{ message: &#x27;waiting for getByRole&#x27; }] }).type, &#x27;ASSERTION_MISMATCH&#x27;)
+})
+
+test(&#x27;stable explicit test identity survives title changes&#x27;, () =&gt; {
+  assert.equal(testIdentity(fakeTest(&#x27;TEST-001 renamed description&#x27;)), &#x27;TEST-001&#x27;)
+  const fallback = fakeTest(&#x27;unnumbered description&#x27;)
+  assert.equal(testIdentity(fallback), testIdentity(fallback))
+})
+
+test(&#x27;experiment annotations override run environment defaults&#x27;, () =&gt; {
+  assert.equal(experimentMetadata([{ type: &#x27;experiment_id&#x27;, description: &#x27;study-001&#x27; }]).experiment_id, &#x27;study-001&#x27;)
+})
+
+test(&#x27;append preserves earlier attempts and JSON/CSV agree including quoted multiline text&#x27;, t =&gt; {
+  const store = new HistoryStore(temporary(t))
+  const first = record({ notes: &#x27;comma, quote &quot; and\nnew line&#x27; })
+  const second = record({ test_id: &#x27;TEST-002&#x27;, test_name: &#x27;Second&#x27; })
+  store.append(first); store.append(second)
+  assert.deepEqual(store.validate(), [first, second])
+  const parsed = parseCSV(fs.readFileSync(store.csv, &#x27;utf8&#x27;))
+  assert.deepEqual(parsed[0], CSV_COLUMNS)
+  assert.equal(parsed.length, 3)
+  for (const [index, row] of [first, second].entries()) {
+    assert.deepEqual(parsed[index + 1], CSV_COLUMNS.map(key =&gt; row[key] === null ? &#x27;&#x27; : typeof row[key] === &#x27;object&#x27; ? JSON.stringify(row[key]) : String(row[key])))
+  }
+})
+
+test(&#x27;invalid records leave both historical outputs untouched&#x27;, t =&gt; {
+  const store = new HistoryStore(temporary(t))
+  store.append(record())
+  const before = [fs.readFileSync(store.json, &#x27;utf8&#x27;), fs.readFileSync(store.csv, &#x27;utf8&#x27;)]
+  assert.throws(() =&gt; store.append(record({ test_name: &#x27;&#x27; })))
+  assert.deepEqual([fs.readFileSync(store.json, &#x27;utf8&#x27;), fs.readFileSync(store.csv, &#x27;utf8&#x27;)], before)
+})
+
+test(&#x27;duplicate delivery is idempotent and conflicting duplicate IDs are rejected&#x27;, t =&gt; {
+  const store = new HistoryStore(temporary(t)); const row = record()
+  assert.equal(store.append(row), true)
+  assert.equal(store.append(row), false)
+  assert.throws(() =&gt; store.append({ ...row, notes: &#x27;changed&#x27; }), /Conflicting duplicate/)
+  assert.equal(store.validate().length, 1)
+})
+
+test(&#x27;write-ahead journal recovers an interrupted JSON/CSV publication&#x27;, t =&gt; {
+  const store = new HistoryStore(temporary(t)); const first = record(); const second = record()
+  store.append(first)
+  atomicWrite(store.pending, JSON.stringify([first, second]))
+  fs.writeFileSync(store.csv, &#x27;interrupted publication&#x27;)
+  assert.deepEqual(store.validate(), [first, second])
+  assert.equal(fs.readFileSync(store.csv, &#x27;utf8&#x27;), serializeCSV([first, second]))
+  assert.equal(fs.existsSync(store.pending), false)
+})
+
+test(&#x27;unexplained corruption is rejected rather than silently erasing history&#x27;, t =&gt; {
+  const store = new HistoryStore(temporary(t)); store.append(record())
+  fs.writeFileSync(store.csv, &#x27;corrupted&#x27;)
+  assert.throws(() =&gt; store.validate(), /inconsistent/)
+  assert.throws(() =&gt; store.append(record()), /inconsistent/)
+  assert.equal(JSON.parse(fs.readFileSync(store.json)).length, 1)
+})
+
+test(&#x27;concurrent reporter processes append without losing rows&#x27;, async t =&gt; {
+  const directory = temporary(t)
+  const module = new URL(&#x27;./history.js&#x27;, import.meta.url).href
+  const code = `import { HistoryStore } from ${JSON.stringify(module)}; new HistoryStore(process.argv[1]).append(JSON.parse(process.argv[2]));`
+  await Promise.all(Array.from({ length: 5 }, () =&gt; promisify(execFile)(process.execPath, [&#x27;--input-type=module&#x27;, &#x27;-e&#x27;, code, directory, JSON.stringify(record())])))
+  assert.equal(new HistoryStore(directory).validate().length, 5)
+})
+
+test(&#x27;reporter keeps first failure and successful retry as separate attempts&#x27;, async t =&gt; {
+  const reporter = new TelemetryReporter({ directory: temporary(t) })
+  const candidate = begin(reporter)
+  const failure = fakeResult({ status: &#x27;failed&#x27;, errors: [{ message: &#x27;expect(locator).toHaveText(expected) failed&#x27; }] })
+  reporter.onTestBegin(candidate, failure); reporter.onTestEnd(candidate, failure)
+  const success = fakeResult({ retry: 1 })
+  reporter.onTestBegin(candidate, success); reporter.onTestEnd(candidate, success)
+  assert.equal(await reporter.onEnd({ status: &#x27;passed&#x27; }), undefined)
+  const rows = reporter.store.validate()
+  assert.deepEqual(rows.map(row =&gt; row.status), [&#x27;FAIL&#x27;, &#x27;PASS&#x27;])
+  assert.deepEqual(rows.map(row =&gt; row.retry_count), [0, 1])
+  assert.notEqual(rows[0].attempt_id, rows[1].attempt_id)
+  assert.equal(rows[0].run_id, rows[1].run_id)
+  assert.equal(rows[0].test_id, rows[1].test_id)
+  assert.equal(rows[1].failure_type, null)
+})
+
+test(&#x27;failure artifacts are copied to durable storage outside Playwright output&#x27;, async t =&gt; {
+  const directory = temporary(t); const reporter = new TelemetryReporter({ directory })
+  const candidate = begin(reporter)
+  const source = path.join(directory, &#x27;temporary-source.png&#x27;); fs.writeFileSync(source, &#x27;image-test-data&#x27;)
+  const result = fakeResult({ status: &#x27;failed&#x27;, errors: [{ message: &#x27;no element matches selector&#x27; }], attachments: [
+    { name: &#x27;screenshot&#x27;, contentType: &#x27;image/png&#x27;, path: source },
+    { name: &#x27;trace&#x27;, contentType: &#x27;application/zip&#x27;, body: Buffer.from(&#x27;trace-test-data&#x27;) },
+  ] })
+  reporter.onTestEnd(candidate, result)
+  assert.equal(await reporter.onEnd({ status: &#x27;failed&#x27; }), undefined)
+  fs.unlinkSync(source)
+  const [row] = reporter.store.validate()
+  assert.equal(fs.readFileSync(path.join(directory, row.screenshot_path), &#x27;utf8&#x27;), &#x27;image-test-data&#x27;)
+  assert.equal(fs.readFileSync(path.join(directory, row.trace_path), &#x27;utf8&#x27;), &#x27;trace-test-data&#x27;)
+})
+
+test(&#x27;runtime errors are retained without relabeling a passing test as failed&#x27;, async t =&gt; {
+  const reporter = new TelemetryReporter({ directory: temporary(t) }); const candidate = begin(reporter)
+  reporter.onTestEnd(candidate, fakeResult({ attachments: [{ name: &#x27;telemetry-runtime-errors&#x27;, body: Buffer.from(&#x27;[&quot;TypeError: observed&quot;]&#x27;) }] }))
+  await reporter.onEnd({ status: &#x27;passed&#x27; })
+  const [row] = reporter.store.validate()
+  assert.equal(row.status, &#x27;PASS&#x27;); assert.equal(row.failure_type, null)
+  assert.deepEqual(row.runtime_errors, [&#x27;TypeError: observed&#x27;])
+})
+
+test(&#x27;runner errors use a distinct record type instead of inventing failed tests&#x27;, async t =&gt; {
+  const reporter = new TelemetryReporter({ directory: temporary(t) })
+  reporter.onError({ message: &#x27;Web server failed to start&#x27; })
+  await reporter.onEnd({ status: &#x27;failed&#x27; })
+  const [row] = reporter.store.validate()
+  assert.equal(row.record_type, &#x27;RUN_ERROR&#x27;); assert.equal(row.test_id, &#x27;__RUN__&#x27;)
+  assert.equal(row.failure_type, &#x27;SETUP_ENVIRONMENT_FAILURE&#x27;)
+})
+
+test(&#x27;telemetry errors explicitly fail the run instead of being swallowed by Playwright&#x27;, async t =&gt; {
+  const reporter = new TelemetryReporter({ directory: temporary(t) }); const candidate = begin(reporter)
+  reporter.onTestEnd(candidate, fakeResult({ duration: -1 }))
+  assert.deepEqual(await reporter.onEnd({ status: &#x27;passed&#x27; }), { status: &#x27;failed&#x27; })
+  assert.equal(JSON.parse(fs.readFileSync(reporter.manifest)).status, &#x27;TELEMETRY_ERROR&#x27;)
+})
+</code></pre></details>
+<details id="source-automation/telemetry-README.txt"><summary>automation/telemetry-README.txt</summary><pre><code>SCHEMA UPDATE: Sprint 4 adds telemetry schema v2. Run npm run telemetry:migrate before ordinary E2E writes to legacy history; the experiment runner migrates automatically. See experiments/README.md and telemetry/record.schema.json for the current experiment fields. The Sprint 3 guide below documents the original foundation.
+
+SPRINT 3 — DATASET FOUNDATION AND TELEMETRY
+
+Scope
+Automatic, durable per-attempt Playwright telemetry. No ML, risk scoring, recommendation engine,
+self-healing, dashboard, backend services, or application feature changes are implemented.
+No new dependencies are required. Existing E2E specs and page objects are unchanged.
+
+FILES / INTEGRATION
+New automation/telemetry/ files:
+  taxonomy.js                 frozen failure taxonomy and conservative symptom classifier
+  schema.js                   canonical schema and runtime/cross-field validation
+  record.schema.json          exported JSON Schema, synchronized with schema.js by a unit test
+  metadata.js                 run IDs, source fingerprints, stable test IDs, experiment metadata
+  history.js                  locked historical append, CSV projection, journal recovery
+  TelemetryReporter.js        reporter lifecycle instrumentation and artifact archival
+  validate-history.js         validation/recovery command
+  telemetry.test.js           dependency-free Node tests
+New dataset/.gitignore: excludes generated history, run metadata, and artifacts from Git.
+Modified automation/playwright.config.js: adds the reporter beside existing list and HTML reporters.
+Modified automation/fixtures/test.js: an automatic fixture captures uncaught page runtime errors.
+Modified automation/package.json: adds test:telemetry and telemetry:validate commands.
+
+FROZEN FAILURE TAXONOMY V1
+LOCATOR_NOT_FOUND             Required locator failed to resolve within its action timeout.
+LOCATOR_AMBIGUOUS             Multiple elements matched a locator requiring one element.
+ACTIONABILITY_FAILURE        Target was found but could not be acted on (disabled, hidden, covered, etc.).
+ASSERTION_MISMATCH           Actual observable result differs from the test expectation.
+STATE_CONSISTENCY_FAILURE    Verified inconsistency across related application state/postconditions.
+APPLICATION_RUNTIME_ERROR   Runtime error observed in the failing test or its page.
+SETUP_ENVIRONMENT_FAILURE    Hook, fixture, runner, or execution-environment failure.
+UNKNOWN                     Evidence is insufficient for a supported classification.
+
+The names above are frozen for schema version 1; changes require a versioned migration.
+They describe observed failure categories, not automatically verified root causes.
+classification_source is NONE, HEURISTIC, ANNOTATION, or UNKNOWN.
+Generic timeouts are UNKNOWN unless additional evidence supports a category.
+An assertion timeout remains ASSERTION_MISMATCH; it is not automatically a missing locator.
+STATE_CONSISTENCY_FAILURE requires an explicit failure_type annotation; it cannot be safely
+inferred from arbitrary failed assertions. An annotation is supplied evidence, not proof.
+Setup/teardown failures carry their phase and are separated from business assertions.
+
+STATUS VS FAILURE TYPE
+PASS          -&gt; failure_type=null
+SKIPPED       -&gt; failure_type=null
+FAIL          -&gt; one frozen failure type
+TIMED_OUT     -&gt; one frozen failure type
+INTERRUPTED   -&gt; one frozen failure type, UNKNOWN when evidence is insufficient
+
+Invalid coupon correctly rejected is PASS, not a failure training example.
+An action-level TimeoutError normally maps to Playwright failed -&gt; FAIL.
+TIMED_OUT is reserved for Playwright&#x27;s test-result status timedOut.
+Expected-to-fail tests retain actual status plus expected_status; do not collapse these fields.
+Retries retain the failed initial attempt even if a later attempt passes.
+
+CANONICAL SCHEMA
+Every field in record.schema.json is required, including nullable paths and empty experiment fields.
+The user-requested fields are all present:
+run_id, attempt_id, test_id, test_name, suite_name, browser, status, failure_type, duration_ms,
+retry_count, start_time, end_time, app_version, test_version, trace_path, screenshot_path, notes.
+Additional required provenance fields:
+schema_version, record_type, framework_version, playwright_version, timestamp, environment,
+locator_mutation, fault_variant, experiment_id, scenario_variant, expected_status,
+classification_source, failure_phase, error_message, error_stack, runtime_errors,
+project_name, worker_index, repeat_index.
+
+run_id and attempt_id are UUID v4 strings. A new run_id is created per runner invocation.
+Each retry has a unique attempt_id and the same logical test_id.
+retry_count is the zero-based attempt retry index: initial=0, first retry=1.
+The explicit ID at the beginning of each existing test title is stable across description changes.
+Duplicate explicit IDs for different tests are rejected. Unnumbered tests use a deterministic
+file/describe/title hash; moving or renaming those tests changes their fallback ID.
+Browser is the configured engine (for example chromium); project_name is recorded separately.
+All timestamps are UTC ISO strings. timestamp is the run creation time; start_time/end_time are
+attempt times. end_time is start_time plus Playwright&#x27;s measured duration_ms.
+app_version and test_version include package version and source-content SHA-256 fingerprints.
+framework_version and playwright_version are recorded separately.
+Environment includes Node version, OS/platform, architecture, host, CI flag, worker count, and Git commit.
+Source hashes identify the standard application/framework sources, including uncommitted changes;
+they do not replace storing the source revision for reproducible experiments.
+
+TEST_ATTEMPT rows represent actual test attempts. RUN_ERROR rows represent reporter onError events
+outside a test, using test_id=__RUN__, browser=runner, and failure_phase=run. Exclude these rows from
+per-test modeling; do not invent failed attempts for tests that never started.
+Errors occurring before Playwright can load a reporter cannot be captured by that reporter.
+A force-killed process cannot emit final events; completed rows survive and its run manifest can remain RUNNING.
+
+HISTORICAL STORAGE
+Default directory: project-root/dataset (independent of the command&#x27;s working directory).
+Outputs:
+  execution-history.json                 canonical JSON array
+  test-history.csv                       deterministic RFC-style CSV projection
+  runs/&lt;run_id&gt;/run.json                 run metadata and completion manifest
+  artifacts/&lt;run_id&gt;/&lt;attempt_id&gt;/       durable copies of trace.zip and screenshot.png
+
+History appends logically: previous rows are preserved, and the array is atomically replaced.
+The CSV includes all schema columns in a fixed order. Objects/arrays are JSON-encoded cells;
+null becomes an empty cell; commas, quotes, and newlines are quoted and escaped correctly.
+
+A local inter-process lock serializes writers. Each completed attempt is validated before writing.
+A write-ahead journal records the intended complete snapshot; each output is replaced atomically.
+If publication is interrupted, the next append/validation replays the journal and repairs both files.
+There is no portable simultaneous atomic rename of two independent files. Consumers needing a
+consistent snapshot should use HistoryStore.validate(), which takes the same lock and recovers first.
+Unexplained corruption without a journal is rejected, never silently replaced by empty history.
+Duplicate delivery of an identical attempt is idempotent; conflicting duplicate IDs are rejected.
+Storage/validation errors explicitly fail the runner rather than being swallowed by Playwright.
+
+If a process crashes while holding .history-lock, confirm no writer is active before removing
+that lock directory. Automatic stale-lock stealing is intentionally avoided to prevent writer races.
+After releasing a confirmed stale lock, run telemetry:validate to recover any pending publication.
+The JSON/CSV strategy is intended for this project&#x27;s initial local dataset scale, not large distributed storage.
+
+ARTIFACTS
+Existing HTML reports, screenshots, and traces remain configured as before.
+The reporter additionally archives the first standard screenshot and trace attachment per attempt,
+so later Playwright cleanup cannot erase the telemetry-linked copy.
+trace_path and screenshot_path are relative to the telemetry dataset directory, not the reports directory.
+Paths are null when Playwright generated no such artifact (normal for passing/skipped tests).
+Runtime page errors are retained in runtime_errors; observing one does not turn a passing test into FAIL.
+Classification records evidence and uncertainty rather than silently changing Playwright outcomes.
+
+EXPERIMENT METADATA (NO HEALING OR FAULT ENGINE)
+Optional run-level environment variables:
+  LOCATOR_MUTATION
+  FAULT_VARIANT
+  EXPERIMENT_ID
+  SCENARIO_VARIANT
+These default to empty strings and can be overridden by matching test annotations.
+Future tests may supply annotations without changing the reporter, for example:
+
+  test(&#x27;EXPERIMENT-001 locator change&#x27;, {
+    annotation: [
+      { type: &#x27;experiment_id&#x27;, description: &#x27;study-001&#x27; },
+      { type: &#x27;fault_variant&#x27;, description: &#x27;accessible-name-change&#x27; },
+      { type: &#x27;locator_mutation&#x27;, description: &#x27;button-name&#x27; },
+      { type: &#x27;scenario_variant&#x27;, description: &#x27;checkout&#x27; },
+    ],
+  }, async ({ page }) =&gt; { /* future experiment actions */ })
+
+Optional annotations failure_type and telemetry_note supply a verified category and notes.
+Current tests need no annotations or manual modification. Metadata alone does not inject faults.
+
+COMMANDS (FROM automation/)
+  npm run test:telemetry
+  npm test
+  npm run telemetry:validate
+  npm run report
+
+Run again and validate to confirm append behavior:
+  npm test
+  npm run telemetry:validate
+
+Optional separate experiment dataset:
+  TELEMETRY_DIR=/absolute/path/to/study EXPERIMENT_ID=study-001 npm test
+  TELEMETRY_DIR=/absolute/path/to/study npm run telemetry:validate
+
+Use a separate directory/experiment_id for deliberate failure campaigns to avoid mixing them
+unlabeled with the normal baseline. All paths in its records resolve relative to that directory.
+No package installation is needed beyond Sprint 2&#x27;s existing dependencies.
+
+COMPLETED VERIFICATION
+- 26 Node telemetry tests passed: mandatory fields, type/status validation, all taxonomy categories,
+  business validation PASS, explicit stable IDs, CSV round-trip escaping, append, duplicate handling,
+  interrupted-publication recovery, corruption rejection, concurrent writers, retries, artifacts,
+  runtime-error evidence, run-level errors, and explicit failure on telemetry errors.
+- Two normal Chromium runs passed all 34 E2E tests each (9.4 seconds each).
+- Main dataset contains 68 rows, two run IDs, 34 stable test IDs, and 68 distinct attempt IDs.
+- JSON and CSV synchronization and artifact existence validation passed.
+- Controlled browser probes used a separate dataset under reports/telemetry-probe-dataset:
+  invalid coupon rejected=PASS; unresolved locator=FAIL then retry PASS;
+  assertion mismatch=FAIL; uncaught page runtime error=FAIL.
+- Real PNG screenshots and Playwright ZIP trace contents were verified.
+- Durable artifact links still resolved after the probe&#x27;s original Playwright output was deleted.
+- No original E2E spec, page object, frontend, or backend source was modified.
+
+Complete example JSON/CSV files are under dataset/examples/. They contain real representative
+records copied from the normal run and the explicitly labeled verification run. They are examples,
+not additional rows appended to the main baseline. Example failure artifacts are archived beneath
+that directory so its relative links resolve.
+
+API references:
+https://playwright.dev/docs/api/class-reporter
+https://playwright.dev/docs/api/class-testresult
+</code></pre></details>
+<details id="source-dataset/.gitignore"><summary>dataset/.gitignore</summary><pre><code>execution-history.json
+test-history.csv
+.history-*
+artifacts/
+runs/
+*.tmp
+migrations/
+campaigns/
+</code></pre></details>
+</section><section><h2>5. Telemetry Changes</h2><p>Canonical schema version 2 adds fault_type, emulated, injected_at, mutation_version, expected_failure_type, and injection_verified. Existing experiment_id, fault_variant, locator_mutation, and scenario_variant fields are populated per attempt. Test-source fingerprints now include experiment code.</p>
+<p>Observed status and failure_type remain distinct from injected mechanism and expected_failure_type. No expected label overwrites an actual observation. State invariants receive an explicit researcher annotation only after a confirmed business defect causes the chosen original invariant assertion to fail.</p>
+<p>Migration preserved all original values and IDs for the 102 existing records, except the schema-version marker, and retained byte-for-byte v1 JSON/CSV backups. Backfilled legacy defaults do not retrospectively prove natural execution provenance. New writes require v2; reads can validate preserved v1 data.</p>
+<p>Business defects patch only the Vite-served JavaScript response, using <a href="https://playwright.dev/docs/mock#modify-api-responses">Playwright response interception</a>. DOM changes, routes and timers disappear with the isolated context. Original and mutated source hashes and confirmed effects are recorded as evidence. The delayed-render case retains the DOM node but delays visibility; includeHidden isolates actionability from locator visibility filtering.</p>
+<p>The campaign runner preserves FAIL rows and checks their meaning separately. Healthy controls must PASS. Unconfirmed injections, setup failures, surviving mutations, wrong categories and missing evidence invalidate a campaign. Verified campaign manifests provide the acceptance filter for research analysis.</p></section>
+<section><h2>6. Execution Commands</h2><pre>cd /Users/chetanachark/predictive-test-app/automation
+npm run telemetry:migrate
+npm run test:telemetry
+npm run test:experiments
+npm run experiments:list
+npm run experiments
+npm run telemetry:validate
+npm run experiments:report
+
+# Family selection includes the healthy controls
+npm run experiments -- --group locator-mutation
+npm run experiments -- --group assertion-mutation
+npm run experiments -- --group state-mutation
+npm run experiments -- --group timeout-mutation
+
+# Fresh-context repetitions
+npm run experiments -- --repeat 2
+
+# Original application suite, without injections
+npm test</pre>
+<p>A normal full campaign deliberately yields six passing and nine failing Playwright cases. Its command returns success only when the separate campaign audit confirms every expected observation. This is not fifteen passing E2E tests. Retries are disabled in campaigns. Reports stay separate from the standard suite.</p></section>
+<section><h2>7. Validation Steps</h2><ul>
+<li>26 telemetry unit tests passed with schema v2.</li>
+<li>19 experiment/migration/query tests passed.</li>
+<li>One 15-attempt campaign verified six controls and nine faults.</li>
+<li>A repeated 30-attempt campaign reproduced the same cases twice from fresh contexts: 12 controls and 18 injected failures.</li>
+<li>The original 34 E2E tests passed afterward in 9.4 seconds.</li>
+<li>All 102 original rows preserved their original fields and attempt IDs; migration backups remain available.</li>
+<li>JSON/CSV synchronization and all historical artifact links validated.</li>
+<li>All 27 accepted failure traces were valid Playwright ZIP archives; corresponding screenshots had valid PNG signatures.</li>
+<li>File fingerprints confirmed 32 application/original E2E/page-object source files were unchanged.</li>
+</ul><h3>Accepted experiment observations</h3><table><tr><th>Outcome/category</th><th>Count</th></tr>
+<tr><td>PASS</td><td>18</td></tr>
+<tr><td>LOCATOR_NOT_FOUND</td><td>3</td></tr>
+<tr><td>LOCATOR_AMBIGUOUS</td><td>3</td></tr>
+<tr><td>ASSERTION_MISMATCH</td><td>3</td></tr>
+<tr><td>STATE_CONSISTENCY_FAILURE</td><td>9</td></tr>
+<tr><td>ACTIONABILITY_FAILURE</td><td>9</td></tr>
+</table><p>Raw history contains 196 rows: 136 ordinary-suite records, 45 verified experiment observations, and 15 rows from one rejected development campaign. That campaign exposed Vite-normalized source anchors and CSS overriding hidden. It was retained as INVALID; recipe patch version 1.0.1 corrected the injection mechanics. Never count its rows as accepted fault observations.</p>
+<h3>Dataset inspection queries</h3><pre>npm run experiments:inspect -- --latest-campaign
+npm run experiments:inspect -- --verified-campaigns
+npm run experiments:inspect -- --verified-campaigns --status FAIL
+npm run experiments:inspect -- --verified-campaigns --failure-type LOCATOR_AMBIGUOUS
+npm run experiments:inspect -- --experiment S4-STATE-001-v1
+npm run experiments:inspect -- --run-id RUN_UUID</pre>
+<p>These are emulated faults in one SUT. Repetition demonstrates reproducibility, not independent fault diversity or production prevalence. No prediction accuracy, healing effectiveness, or generalization claim is made. No risk engine, recommendations, self-healing, ML or dashboard was implemented.</p></section>
+<section><h2>8. Example Dataset Rows</h2><p>Six complete schema-valid examples cover PASS and each requested failure category. They are copied from the latest verified campaign. Their archived paths resolve relative to dataset/experiment-examples. They are examples, not extra main-history observations.</p><h3>JSON</h3><pre><code>
+[
+  {
+    &quot;schema_version&quot;: 2,
+    &quot;record_type&quot;: &quot;TEST_ATTEMPT&quot;,
+    &quot;run_id&quot;: &quot;33360b84-cec5-4cde-b94f-deeea2c13662&quot;,
+    &quot;timestamp&quot;: &quot;2026-10-19T08:32:03.448Z&quot;,
+    &quot;app_version&quot;: &quot;0.0.0+sha256:d6625e949e7a6e04a810b6bdd5485f495166ae39612263c5b8af35023e717145&quot;,
+    &quot;test_version&quot;: &quot;1.0.0+sha256:82e3b9a875e19c849b77c43289afe65728896bd644681213dbf684af1c46fb50&quot;,
+    &quot;framework_version&quot;: &quot;1.0.0&quot;,
+    &quot;playwright_version&quot;: &quot;1.64.1&quot;,
+    &quot;environment&quot;: {
+      &quot;node_version&quot;: &quot;v22.23.2&quot;,
+      &quot;platform&quot;: &quot;darwin&quot;,
+      &quot;architecture&quot;: &quot;arm64&quot;,
+      &quot;os_release&quot;: &quot;27.0.0&quot;,
+      &quot;hostname&quot;: &quot;Chetanachars-MacBook-Pro.local&quot;,
+      &quot;ci&quot;: false,
+      &quot;workers&quot;: 1,
+      &quot;git_commit&quot;: &quot;7fc683db835ed3f99db1c44b206513ecaf25a66a&quot;
+    },
+    &quot;attempt_id&quot;: &quot;e27f4684-4651-4ea4-9c70-6cb65e0cb6f1&quot;,
+    &quot;test_id&quot;: &quot;EXPASSERT-001&quot;,
+    &quot;test_name&quot;: &quot;EXPASSERT-001 SAVE10 business oracle detects the emulated five-percent defect&quot;,
+    &quot;suite_name&quot;: &quot;assertion.spec.js&quot;,
+    &quot;browser&quot;: &quot;chromium&quot;,
+    &quot;status&quot;: &quot;FAIL&quot;,
+    &quot;failure_type&quot;: &quot;ASSERTION_MISMATCH&quot;,
+    &quot;duration_ms&quot;: 1387,
+    &quot;retry_count&quot;: 0,
+    &quot;start_time&quot;: &quot;2026-10-19T08:32:03.688Z&quot;,
+    &quot;end_time&quot;: &quot;2026-10-19T08:32:05.075Z&quot;,
+    &quot;trace_path&quot;: &quot;artifacts/33360b84-cec5-4cde-b94f-deeea2c13662/e27f4684-4651-4ea4-9c70-6cb65e0cb6f1/trace.zip&quot;,
+    &quot;screenshot_path&quot;: &quot;artifacts/33360b84-cec5-4cde-b94f-deeea2c13662/e27f4684-4651-4ea4-9c70-6cb65e0cb6f1/screenshot.png&quot;,
+    &quot;notes&quot;: &quot;{\&quot;method\&quot;:\&quot;browser-module-response\&quot;,\&quot;module\&quot;:\&quot;/src/context/shopState.js\&quot;,\&quot;original_sha256\&quot;:\&quot;2bf5b7dd20a610ca9fcd6ec3938675ac31ce21325e9ca634121080503830c2d0\&quot;,\&quot;mutated_sha256\&quot;:\&quot;d051f2050fed9826c2ff026e06efa7f3c14f91b1adcb611649f9a7e2410e1738\&quot;,\&quot;anchor\&quot;:\&quot;SAVE10:\\\\s*0?\\\\.1\\\\b\&quot;,\&quot;replacement\&quot;:\&quot;SAVE10: 0.05\&quot;,\&quot;experiment_id\&quot;:\&quot;S4-ASSERT-001-v1\&quot;,\&quot;mutation_version\&quot;:\&quot;1.0.1\&quot;,\&quot;observation\&quot;:\&quot;SAVE10 produced 2500 discount on a 50000 subtotal (5%).\&quot;}\nObserved failure symptom; heuristic classification is not ground-truth root cause.\nFailed step: Expect \&quot;toHaveText\&quot;&quot;,
+    &quot;locator_mutation&quot;: &quot;&quot;,
+    &quot;fault_variant&quot;: &quot;save10-five-percent.v1&quot;,
+    &quot;experiment_id&quot;: &quot;S4-ASSERT-001-v1&quot;,
+    &quot;scenario_variant&quot;: &quot;coupon-save10&quot;,
+    &quot;fault_type&quot;: &quot;COUPON_RATE_DEFECT&quot;,
+    &quot;emulated&quot;: true,
+    &quot;injected_at&quot;: &quot;2026-10-19T08:32:03.882Z&quot;,
+    &quot;mutation_version&quot;: &quot;1.0.1&quot;,
+    &quot;expected_failure_type&quot;: &quot;ASSERTION_MISMATCH&quot;,
+    &quot;injection_verified&quot;: true,
+    &quot;expected_status&quot;: &quot;PASS&quot;,
+    &quot;classification_source&quot;: &quot;HEURISTIC&quot;,
+    &quot;failure_phase&quot;: &quot;test&quot;,
+    &quot;error_message&quot;: &quot;Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  locator(&#x27;p&#x27;).filter({ hasText: /^Discount:/ }).locator(&#x27;strong&#x27;)\nExpected: \u001b[32m\&quot;₹\u001b[7m5,0\u001b[27m00\&quot;\u001b[39m\nReceived: \u001b[31m\&quot;₹\u001b[7m2,5\u001b[27m00\&quot;\u001b[39m\nTimeout:  800ms\n\nCall log:\n\u001b[2m  - Expect \&quot;toHaveText\&quot; locator(&#x27;p&#x27;).filter({ hasText: /^Discount:/ }).locator(&#x27;strong&#x27;) with timeout 800ms\u001b[22m\n\u001b[2m  - waiting for locator(&#x27;p&#x27;).filter({ hasText: /^Discount:/ }).locator(&#x27;strong&#x27;)\u001b[22m\n\u001b[2m    9 × locator resolved to &lt;strong&gt;₹2,500&lt;/strong&gt;\u001b[22m\n\u001b[2m      - unexpected value \&quot;₹2,500\&quot;\u001b[22m\n&quot;,
+    &quot;error_stack&quot;: &quot;Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  locator(&#x27;p&#x27;).filter({ hasText: /^Discount:/ }).locator(&#x27;strong&#x27;)\nExpected: \u001b[32m\&quot;₹\u001b[7m5,0\u001b[27m00\&quot;\u001b[39m\nReceived: \u001b[31m\&quot;₹\u001b[7m2,5\u001b[27m00\&quot;\u001b[39m\nTimeout:  800ms\n\nCall log:\n\u001b[2m  - Expect \&quot;toHaveText\&quot; locator(&#x27;p&#x27;).filter({ hasText: /^Discount:/ }).locator(&#x27;strong&#x27;) with timeout 800ms\u001b[22m\n\u001b[2m  - waiting for locator(&#x27;p&#x27;).filter({ hasText: /^Discount:/ }).locator(&#x27;strong&#x27;)\u001b[22m\n\u001b[2m    9 × locator resolved to &lt;strong&gt;₹2,500&lt;/strong&gt;\u001b[22m\n\u001b[2m      - unexpected value \&quot;₹2,500\&quot;\u001b[22m\n\n    at /Users/chetanachark/predictive-test-app/automation/experiments/assertion-mutation/assertion.spec.js:14:39&quot;,
+    &quot;runtime_errors&quot;: [],
+    &quot;project_name&quot;: &quot;chromium&quot;,
+    &quot;worker_index&quot;: 0,
+    &quot;repeat_index&quot;: 0
+  },
+  {
+    &quot;schema_version&quot;: 2,
+    &quot;record_type&quot;: &quot;TEST_ATTEMPT&quot;,
+    &quot;run_id&quot;: &quot;33360b84-cec5-4cde-b94f-deeea2c13662&quot;,
+    &quot;timestamp&quot;: &quot;2026-10-19T08:32:03.448Z&quot;,
+    &quot;app_version&quot;: &quot;0.0.0+sha256:d6625e949e7a6e04a810b6bdd5485f495166ae39612263c5b8af35023e717145&quot;,
+    &quot;test_version&quot;: &quot;1.0.0+sha256:82e3b9a875e19c849b77c43289afe65728896bd644681213dbf684af1c46fb50&quot;,
+    &quot;framework_version&quot;: &quot;1.0.0&quot;,
+    &quot;playwright_version&quot;: &quot;1.64.1&quot;,
+    &quot;environment&quot;: {
+      &quot;node_version&quot;: &quot;v22.23.2&quot;,
+      &quot;platform&quot;: &quot;darwin&quot;,
+      &quot;architecture&quot;: &quot;arm64&quot;,
+      &quot;os_release&quot;: &quot;27.0.0&quot;,
+      &quot;hostname&quot;: &quot;Chetanachars-MacBook-Pro.local&quot;,
+      &quot;ci&quot;: false,
+      &quot;workers&quot;: 1,
+      &quot;git_commit&quot;: &quot;7fc683db835ed3f99db1c44b206513ecaf25a66a&quot;
+    },
+    &quot;attempt_id&quot;: &quot;2dab7e71-b19b-4be5-8bc3-9eca60a6bf2c&quot;,
+    &quot;test_id&quot;: &quot;EXPBASE-001&quot;,
+    &quot;test_name&quot;: &quot;EXPBASE-001 healthy checkout-navigation&quot;,
+    &quot;suite_name&quot;: &quot;Healthy checkout-navigation&quot;,
+    &quot;browser&quot;: &quot;chromium&quot;,
+    &quot;status&quot;: &quot;PASS&quot;,
+    &quot;failure_type&quot;: null,
+    &quot;duration_ms&quot;: 513,
+    &quot;retry_count&quot;: 0,
+    &quot;start_time&quot;: &quot;2026-10-19T08:32:05.460Z&quot;,
+    &quot;end_time&quot;: &quot;2026-10-19T08:32:05.973Z&quot;,
+    &quot;trace_path&quot;: null,
+    &quot;screenshot_path&quot;: null,
+    &quot;notes&quot;: &quot;&quot;,
+    &quot;locator_mutation&quot;: &quot;&quot;,
+    &quot;fault_variant&quot;: &quot;healthy-control.v1&quot;,
+    &quot;experiment_id&quot;: &quot;S4-BASE-001-v1&quot;,
+    &quot;scenario_variant&quot;: &quot;checkout-navigation&quot;,
+    &quot;fault_type&quot;: &quot;&quot;,
+    &quot;emulated&quot;: false,
+    &quot;injected_at&quot;: null,
+    &quot;mutation_version&quot;: &quot;1.0.1&quot;,
+    &quot;expected_failure_type&quot;: null,
+    &quot;injection_verified&quot;: false,
+    &quot;expected_status&quot;: &quot;PASS&quot;,
+    &quot;classification_source&quot;: &quot;NONE&quot;,
+    &quot;failure_phase&quot;: &quot;test&quot;,
+    &quot;error_message&quot;: &quot;&quot;,
+    &quot;error_stack&quot;: &quot;&quot;,
+    &quot;runtime_errors&quot;: [],
+    &quot;project_name&quot;: &quot;chromium&quot;,
+    &quot;worker_index&quot;: 1,
+    &quot;repeat_index&quot;: 0
+  },
+  {
+    &quot;schema_version&quot;: 2,
+    &quot;record_type&quot;: &quot;TEST_ATTEMPT&quot;,
+    &quot;run_id&quot;: &quot;33360b84-cec5-4cde-b94f-deeea2c13662&quot;,
+    &quot;timestamp&quot;: &quot;2026-10-19T08:32:03.448Z&quot;,
+    &quot;app_version&quot;: &quot;0.0.0+sha256:d6625e949e7a6e04a810b6bdd5485f495166ae39612263c5b8af35023e717145&quot;,
+    &quot;test_version&quot;: &quot;1.0.0+sha256:82e3b9a875e19c849b77c43289afe65728896bd644681213dbf684af1c46fb50&quot;,
+    &quot;framework_version&quot;: &quot;1.0.0&quot;,
+    &quot;playwright_version&quot;: &quot;1.64.1&quot;,
+    &quot;environment&quot;: {
+      &quot;node_version&quot;: &quot;v22.23.2&quot;,
+      &quot;platform&quot;: &quot;darwin&quot;,
+      &quot;architecture&quot;: &quot;arm64&quot;,
+      &quot;os_release&quot;: &quot;27.0.0&quot;,
+      &quot;hostname&quot;: &quot;Chetanachars-MacBook-Pro.local&quot;,
+      &quot;ci&quot;: false,
+      &quot;workers&quot;: 1,
+      &quot;git_commit&quot;: &quot;7fc683db835ed3f99db1c44b206513ecaf25a66a&quot;
+    },
+    &quot;attempt_id&quot;: &quot;59cb394a-18dc-4315-bccc-2ca67cf3dfb8&quot;,
+    &quot;test_id&quot;: &quot;EXPLOC-001&quot;,
+    &quot;test_name&quot;: &quot;EXPLOC-001 original checkout locator detects a DOM mutation&quot;,
+    &quot;suite_name&quot;: &quot;Locator mutation 001&quot;,
+    &quot;browser&quot;: &quot;chromium&quot;,
+    &quot;status&quot;: &quot;FAIL&quot;,
+    &quot;failure_type&quot;: &quot;LOCATOR_NOT_FOUND&quot;,
+    &quot;duration_ms&quot;: 967,
+    &quot;retry_count&quot;: 0,
+    &quot;start_time&quot;: &quot;2026-10-19T08:32:08.966Z&quot;,
+    &quot;end_time&quot;: &quot;2026-10-19T08:32:09.933Z&quot;,
+    &quot;trace_path&quot;: &quot;artifacts/33360b84-cec5-4cde-b94f-deeea2c13662/59cb394a-18dc-4315-bccc-2ca67cf3dfb8/trace.zip&quot;,
+    &quot;screenshot_path&quot;: &quot;artifacts/33360b84-cec5-4cde-b94f-deeea2c13662/59cb394a-18dc-4315-bccc-2ca67cf3dfb8/screenshot.png&quot;,
+    &quot;notes&quot;: &quot;{\&quot;method\&quot;:\&quot;isolated-browser-dom\&quot;,\&quot;operation\&quot;:\&quot;rename\&quot;,\&quot;original\&quot;:{\&quot;text\&quot;:\&quot;Proceed to checkout\&quot;,\&quot;hidden\&quot;:false,\&quot;disabled\&quot;:false,\&quot;display\&quot;:\&quot;\&quot;,\&quot;displayPriority\&quot;:\&quot;\&quot;},\&quot;experiment_id\&quot;:\&quot;S4-LOC-001-v1\&quot;,\&quot;mutation_version\&quot;:\&quot;1.0.1\&quot;,\&quot;observation\&quot;:\&quot;Original accessible name absent; renamed checkout link present.\&quot;}\nObserved failure symptom; heuristic classification is not ground-truth root cause.\nFailed step: Click&quot;,
+    &quot;locator_mutation&quot;: &quot;rename&quot;,
+    &quot;fault_variant&quot;: &quot;checkout-name-change.v1&quot;,
+    &quot;experiment_id&quot;: &quot;S4-LOC-001-v1&quot;,
+    &quot;scenario_variant&quot;: &quot;checkout-navigation&quot;,
+    &quot;fault_type&quot;: &quot;ACCESSIBLE_NAME_CHANGE&quot;,
+    &quot;emulated&quot;: true,
+    &quot;injected_at&quot;: &quot;2026-10-19T08:32:09.374Z&quot;,
+    &quot;mutation_version&quot;: &quot;1.0.1&quot;,
+    &quot;expected_failure_type&quot;: &quot;LOCATOR_NOT_FOUND&quot;,
+    &quot;injection_verified&quot;: true,
+    &quot;expected_status&quot;: &quot;PASS&quot;,
+    &quot;classification_source&quot;: &quot;HEURISTIC&quot;,
+    &quot;failure_phase&quot;: &quot;test&quot;,
+    &quot;error_message&quot;: &quot;TimeoutError: locator.click: Timeout 500ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole(&#x27;link&#x27;, { name: &#x27;Proceed to checkout&#x27;, exact: true })\u001b[22m\n&quot;,
+    &quot;error_stack&quot;: &quot;TimeoutError: locator.click: Timeout 500ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole(&#x27;link&#x27;, { name: &#x27;Proceed to checkout&#x27;, exact: true })\u001b[22m\n\n    at /Users/chetanachark/predictive-test-app/automation/experiments/locator-mutation/locator.spec.js:22:35&quot;,
+    &quot;runtime_errors&quot;: [],
+    &quot;project_name&quot;: &quot;chromium&quot;,
+    &quot;worker_index&quot;: 1,
+    &quot;repeat_index&quot;: 0
+  },
+  {
+    &quot;schema_version&quot;: 2,
+    &quot;record_type&quot;: &quot;TEST_ATTEMPT&quot;,
+    &quot;run_id&quot;: &quot;33360b84-cec5-4cde-b94f-deeea2c13662&quot;,
+    &quot;timestamp&quot;: &quot;2026-10-19T08:32:03.448Z&quot;,
+    &quot;app_version&quot;: &quot;0.0.0+sha256:d6625e949e7a6e04a810b6bdd5485f495166ae39612263c5b8af35023e717145&quot;,
+    &quot;test_version&quot;: &quot;1.0.0+sha256:82e3b9a875e19c849b77c43289afe65728896bd644681213dbf684af1c46fb50&quot;,
+    &quot;framework_version&quot;: &quot;1.0.0&quot;,
+    &quot;playwright_version&quot;: &quot;1.64.1&quot;,
+    &quot;environment&quot;: {
+      &quot;node_version&quot;: &quot;v22.23.2&quot;,
+      &quot;platform&quot;: &quot;darwin&quot;,
+      &quot;architecture&quot;: &quot;arm64&quot;,
+      &quot;os_release&quot;: &quot;27.0.0&quot;,
+      &quot;hostname&quot;: &quot;Chetanachars-MacBook-Pro.local&quot;,
+      &quot;ci&quot;: false,
+      &quot;workers&quot;: 1,
+      &quot;git_commit&quot;: &quot;7fc683db835ed3f99db1c44b206513ecaf25a66a&quot;
+    },
+    &quot;attempt_id&quot;: &quot;102fbd4e-47ca-4557-99df-6a0b24942ce8&quot;,
+    &quot;test_id&quot;: &quot;EXPLOC-002&quot;,
+    &quot;test_name&quot;: &quot;EXPLOC-002 original checkout locator detects a DOM mutation&quot;,
+    &quot;suite_name&quot;: &quot;Locator mutation 002&quot;,
+    &quot;browser&quot;: &quot;chromium&quot;,
+    &quot;status&quot;: &quot;FAIL&quot;,
+    &quot;failure_type&quot;: &quot;LOCATOR_AMBIGUOUS&quot;,
+    &quot;duration_ms&quot;: 455,
+    &quot;retry_count&quot;: 0,
+    &quot;start_time&quot;: &quot;2026-10-19T08:32:10.224Z&quot;,
+    &quot;end_time&quot;: &quot;2026-10-19T08:32:10.679Z&quot;,
+    &quot;trace_path&quot;: &quot;artifacts/33360b84-cec5-4cde-b94f-deeea2c13662/102fbd4e-47ca-4557-99df-6a0b24942ce8/trace.zip&quot;,
+    &quot;screenshot_path&quot;: &quot;artifacts/33360b84-cec5-4cde-b94f-deeea2c13662/102fbd4e-47ca-4557-99df-6a0b24942ce8/screenshot.png&quot;,
+    &quot;notes&quot;: &quot;{\&quot;method\&quot;:\&quot;isolated-browser-dom\&quot;,\&quot;operation\&quot;:\&quot;duplicate\&quot;,\&quot;original\&quot;:{\&quot;text\&quot;:\&quot;Proceed to checkout\&quot;,\&quot;hidden\&quot;:false,\&quot;disabled\&quot;:false,\&quot;display\&quot;:\&quot;\&quot;,\&quot;displayPriority\&quot;:\&quot;\&quot;},\&quot;experiment_id\&quot;:\&quot;S4-LOC-002-v1\&quot;,\&quot;mutation_version\&quot;:\&quot;1.0.1\&quot;,\&quot;observation\&quot;:\&quot;Two links match the unchanged checkout locator.\&quot;}\nObserved failure symptom; heuristic classification is not ground-truth root cause.\nFailed step: Click&quot;,
+    &quot;locator_mutation&quot;: &quot;duplicate&quot;,
+    &quot;fault_variant&quot;: &quot;duplicate-checkout-link.v1&quot;,
+    &quot;experiment_id&quot;: &quot;S4-LOC-002-v1&quot;,
+    &quot;scenario_variant&quot;: &quot;checkout-navigation&quot;,
+    &quot;fault_type&quot;: &quot;DUPLICATE_MATCH&quot;,
+    &quot;emulated&quot;: true,
+    &quot;injected_at&quot;: &quot;2026-10-19T08:32:10.720Z&quot;,
+    &quot;mutation_version&quot;: &quot;1.0.1&quot;,
+    &quot;expected_failure_type&quot;: &quot;LOCATOR_AMBIGUOUS&quot;,
+    &quot;injection_verified&quot;: true,
+    &quot;expected_status&quot;: &quot;PASS&quot;,
+    &quot;classification_source&quot;: &quot;HEURISTIC&quot;,
+    &quot;failure_phase&quot;: &quot;test&quot;,
+    &quot;error_message&quot;: &quot;Error: locator.click: Error: strict mode violation: getByRole(&#x27;link&#x27;, { name: &#x27;Proceed to checkout&#x27;, exact: true }) resolved to 2 elements:\n    1) &lt;a class=\&quot;button\&quot; href=\&quot;/checkout\&quot; data-discover=\&quot;true\&quot;&gt;Proceed to checkout&lt;/a&gt; aka getByRole(&#x27;link&#x27;, { name: &#x27;Proceed to checkout&#x27; }).first()\n    2) &lt;a class=\&quot;button\&quot; href=\&quot;/checkout\&quot; data-discover=\&quot;true\&quot;&gt;Proceed to checkout&lt;/a&gt; aka getByRole(&#x27;link&#x27;, { name: &#x27;Proceed to checkout&#x27; }).nth(1)\n\nCall log:\n\u001b[2m  - waiting for getByRole(&#x27;link&#x27;, { name: &#x27;Proceed to checkout&#x27;, exact: true })\u001b[22m\n&quot;,
+    &quot;error_stack&quot;: &quot;Error: locator.click: Error: strict mode violation: getByRole(&#x27;link&#x27;, { name: &#x27;Proceed to checkout&#x27;, exact: true }) resolved to 2 elements:\n    1) &lt;a class=\&quot;button\&quot; href=\&quot;/checkout\&quot; data-discover=\&quot;true\&quot;&gt;Proceed to checkout&lt;/a&gt; aka getByRole(&#x27;link&#x27;, { name: &#x27;Proceed to checkout&#x27; }).first()\n    2) &lt;a class=\&quot;button\&quot; href=\&quot;/checkout\&quot; data-discover=\&quot;true\&quot;&gt;Proceed to checkout&lt;/a&gt; aka getByRole(&#x27;link&#x27;, { name: &#x27;Proceed to checkout&#x27; }).nth(1)\n\nCall log:\n\u001b[2m  - waiting for getByRole(&#x27;link&#x27;, { name: &#x27;Proceed to checkout&#x27;, exact: true })\u001b[22m\n\n    at /Users/chetanachark/predictive-test-app/automation/experiments/locator-mutation/locator.spec.js:22:35&quot;,
+    &quot;runtime_errors&quot;: [],
+    &quot;project_name&quot;: &quot;chromium&quot;,
+    &quot;worker_index&quot;: 2,
+    &quot;repeat_index&quot;: 0
+  },
+  {
+    &quot;schema_version&quot;: 2,
+    &quot;record_type&quot;: &quot;TEST_ATTEMPT&quot;,
+    &quot;run_id&quot;: &quot;33360b84-cec5-4cde-b94f-deeea2c13662&quot;,
+    &quot;timestamp&quot;: &quot;2026-10-19T08:32:03.448Z&quot;,
+    &quot;app_version&quot;: &quot;0.0.0+sha256:d6625e949e7a6e04a810b6bdd5485f495166ae39612263c5b8af35023e717145&quot;,
+    &quot;test_version&quot;: &quot;1.0.0+sha256:82e3b9a875e19c849b77c43289afe65728896bd644681213dbf684af1c46fb50&quot;,
+    &quot;framework_version&quot;: &quot;1.0.0&quot;,
+    &quot;playwright_version&quot;: &quot;1.64.1&quot;,
+    &quot;environment&quot;: {
+      &quot;node_version&quot;: &quot;v22.23.2&quot;,
+      &quot;platform&quot;: &quot;darwin&quot;,
+      &quot;architecture&quot;: &quot;arm64&quot;,
+      &quot;os_release&quot;: &quot;27.0.0&quot;,
+      &quot;hostname&quot;: &quot;Chetanachars-MacBook-Pro.local&quot;,
+      &quot;ci&quot;: false,
+      &quot;workers&quot;: 1,
+      &quot;git_commit&quot;: &quot;7fc683db835ed3f99db1c44b206513ecaf25a66a&quot;
+    },
+    &quot;attempt_id&quot;: &quot;ba5ba644-9a11-4bf3-b5db-b80360b11134&quot;,
+    &quot;test_id&quot;: &quot;EXPSTATE-001&quot;,
+    &quot;test_name&quot;: &quot;EXPSTATE-001 checkout state invariant detects a controlled commit defect&quot;,
+    &quot;suite_name&quot;: &quot;State mutation 001&quot;,
+    &quot;browser&quot;: &quot;chromium&quot;,
+    &quot;status&quot;: &quot;FAIL&quot;,
+    &quot;failure_type&quot;: &quot;STATE_CONSISTENCY_FAILURE&quot;,
+    &quot;duration_ms&quot;: 1487,
+    &quot;retry_count&quot;: 0,
+    &quot;start_time&quot;: &quot;2026-10-19T08:32:11.047Z&quot;,
+    &quot;end_time&quot;: &quot;2026-10-19T08:32:12.534Z&quot;,
+    &quot;trace_path&quot;: &quot;artifacts/33360b84-cec5-4cde-b94f-deeea2c13662/ba5ba644-9a11-4bf3-b5db-b80360b11134/trace.zip&quot;,
+    &quot;screenshot_path&quot;: &quot;artifacts/33360b84-cec5-4cde-b94f-deeea2c13662/ba5ba644-9a11-4bf3-b5db-b80360b11134/screenshot.png&quot;,
+    &quot;notes&quot;: &quot;{\&quot;method\&quot;:\&quot;browser-module-response\&quot;,\&quot;module\&quot;:\&quot;/src/context/shopState.js\&quot;,\&quot;original_sha256\&quot;:\&quot;2bf5b7dd20a610ca9fcd6ec3938675ac31ce21325e9ca634121080503830c2d0\&quot;,\&quot;mutated_sha256\&quot;:\&quot;b8cddb0a5bd14032bf7155a9d255dd30a814d468f443e3b01d19e479d0e66c08\&quot;,\&quot;anchor\&quot;:\&quot;stock:\\\\s*product\\\\.stock\\\\s*-\\\\s*\\\\(items\\\\.find\\\\(\\\\(?item\\\\)?\\\\s*=&gt;\\\\s*item\\\\.id\\\\s*===\\\\s*product\\\\.id\\\\)\\\\?\\\\.quantity\\\\s*\\\\?\\\\?\\\\s*0\\\\)\&quot;,\&quot;replacement\&quot;:\&quot;stock: product.stock\&quot;,\&quot;experiment_id\&quot;:\&quot;S4-STATE-001-v1\&quot;,\&quot;mutation_version\&quot;:\&quot;1.0.1\&quot;,\&quot;observation\&quot;:\&quot;Order confirmed but Laptop stock remains at 5.\&quot;}\nResearcher-labeled failure of the explicitly checked state invariant.\nFailed step: Expect \&quot;toBeVisible\&quot;&quot;,
+    &quot;locator_mutation&quot;: &quot;&quot;,
+    &quot;fault_variant&quot;: &quot;stock-not-reduced.v1&quot;,
+    &quot;experiment_id&quot;: &quot;S4-STATE-001-v1&quot;,
+    &quot;scenario_variant&quot;: &quot;stock-after-order&quot;,
+    &quot;fault_type&quot;: &quot;STOCK_COMMIT_DEFECT&quot;,
+    &quot;emulated&quot;: true,
+    &quot;injected_at&quot;: &quot;2026-10-19T08:32:11.229Z&quot;,
+    &quot;mutation_version&quot;: &quot;1.0.1&quot;,
+    &quot;expected_failure_type&quot;: &quot;STATE_CONSISTENCY_FAILURE&quot;,
+    &quot;injection_verified&quot;: true,
+    &quot;expected_status&quot;: &quot;PASS&quot;,
+    &quot;classification_source&quot;: &quot;ANNOTATION&quot;,
+    &quot;failure_phase&quot;: &quot;test&quot;,
+    &quot;error_message&quot;: &quot;Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole(&#x27;article&#x27;, { name: &#x27;Laptop&#x27;, exact: true }).getByText(&#x27;In stock: 4&#x27;, { exact: true })\nExpected: visible\nTimeout: 800ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \&quot;toBeVisible\&quot; getByRole(&#x27;article&#x27;, { name: &#x27;Laptop&#x27;, exact: true }).getByText(&#x27;In stock: 4&#x27;, { exact: true }) with timeout 800ms\u001b[22m\n\u001b[2m  - waiting for getByRole(&#x27;article&#x27;, { name: &#x27;Laptop&#x27;, exact: true }).getByText(&#x27;In stock: 4&#x27;, { exact: true })\u001b[22m\n&quot;,
+    &quot;error_stack&quot;: &quot;Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole(&#x27;article&#x27;, { name: &#x27;Laptop&#x27;, exact: true }).getByText(&#x27;In stock: 4&#x27;, { exact: true })\nExpected: visible\nTimeout: 800ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \&quot;toBeVisible\&quot; getByRole(&#x27;article&#x27;, { name: &#x27;Laptop&#x27;, exact: true }).getByText(&#x27;In stock: 4&#x27;, { exact: true }) with timeout 800ms\u001b[22m\n\u001b[2m  - waiting for getByRole(&#x27;article&#x27;, { name: &#x27;Laptop&#x27;, exact: true }).getByText(&#x27;In stock: 4&#x27;, { exact: true })\u001b[22m\n\n    at assertion (/Users/chetanachark/predictive-test-app/automation/experiments/state-mutation/state.spec.js:17:130)\n    at assertStateInvariant (/Users/chetanachark/predictive-test-app/automation/experiments/injector.js:94:15)\n    at /Users/chetanachark/predictive-test-app/automation/experiments/state-mutation/state.spec.js:17:15&quot;,
+    &quot;runtime_errors&quot;: [],
+    &quot;project_name&quot;: &quot;chromium&quot;,
+    &quot;worker_index&quot;: 3,
+    &quot;repeat_index&quot;: 0
+  },
+  {
+    &quot;schema_version&quot;: 2,
+    &quot;record_type&quot;: &quot;TEST_ATTEMPT&quot;,
+    &quot;run_id&quot;: &quot;33360b84-cec5-4cde-b94f-deeea2c13662&quot;,
+    &quot;timestamp&quot;: &quot;2026-10-19T08:32:03.448Z&quot;,
+    &quot;app_version&quot;: &quot;0.0.0+sha256:d6625e949e7a6e04a810b6bdd5485f495166ae39612263c5b8af35023e717145&quot;,
+    &quot;test_version&quot;: &quot;1.0.0+sha256:82e3b9a875e19c849b77c43289afe65728896bd644681213dbf684af1c46fb50&quot;,
+    &quot;framework_version&quot;: &quot;1.0.0&quot;,
+    &quot;playwright_version&quot;: &quot;1.64.1&quot;,
+    &quot;environment&quot;: {
+      &quot;node_version&quot;: &quot;v22.23.2&quot;,
+      &quot;platform&quot;: &quot;darwin&quot;,
+      &quot;architecture&quot;: &quot;arm64&quot;,
+      &quot;os_release&quot;: &quot;27.0.0&quot;,
+      &quot;hostname&quot;: &quot;Chetanachars-MacBook-Pro.local&quot;,
+      &quot;ci&quot;: false,
+      &quot;workers&quot;: 1,
+      &quot;git_commit&quot;: &quot;7fc683db835ed3f99db1c44b206513ecaf25a66a&quot;
+    },
+    &quot;attempt_id&quot;: &quot;edd23c05-a65b-447b-bb11-8671b0ea9570&quot;,
+    &quot;test_id&quot;: &quot;EXPACTION-001&quot;,
+    &quot;test_name&quot;: &quot;EXPACTION-001 checkout cannot act on an unavailable control&quot;,
+    &quot;suite_name&quot;: &quot;Actionability mutation 001&quot;,
+    &quot;browser&quot;: &quot;chromium&quot;,
+    &quot;status&quot;: &quot;FAIL&quot;,
+    &quot;failure_type&quot;: &quot;ACTIONABILITY_FAILURE&quot;,
+    &quot;duration_ms&quot;: 1055,
+    &quot;retry_count&quot;: 0,
+    &quot;start_time&quot;: &quot;2026-10-19T08:32:16.552Z&quot;,
+    &quot;end_time&quot;: &quot;2026-10-19T08:32:17.607Z&quot;,
+    &quot;trace_path&quot;: &quot;artifacts/33360b84-cec5-4cde-b94f-deeea2c13662/edd23c05-a65b-447b-bb11-8671b0ea9570/trace.zip&quot;,
+    &quot;screenshot_path&quot;: &quot;artifacts/33360b84-cec5-4cde-b94f-deeea2c13662/edd23c05-a65b-447b-bb11-8671b0ea9570/screenshot.png&quot;,
+    &quot;notes&quot;: &quot;{\&quot;method\&quot;:\&quot;isolated-browser-dom\&quot;,\&quot;operation\&quot;:\&quot;delay\&quot;,\&quot;original\&quot;:{\&quot;text\&quot;:\&quot;Place order\&quot;,\&quot;hidden\&quot;:false,\&quot;disabled\&quot;:false,\&quot;display\&quot;:\&quot;\&quot;,\&quot;displayPriority\&quot;:\&quot;\&quot;},\&quot;experiment_id\&quot;:\&quot;S4-ACTION-001-v1\&quot;,\&quot;mutation_version\&quot;:\&quot;1.0.1\&quot;,\&quot;observation\&quot;:\&quot;Unique submit button exists but is not rendered.\&quot;}\nObserved failure symptom; heuristic classification is not ground-truth root cause.\nFailed step: Click&quot;,
+    &quot;locator_mutation&quot;: &quot;&quot;,
+    &quot;fault_variant&quot;: &quot;delayed-control-render.v1&quot;,
+    &quot;experiment_id&quot;: &quot;S4-ACTION-001-v1&quot;,
+    &quot;scenario_variant&quot;: &quot;checkout-action&quot;,
+    &quot;fault_type&quot;: &quot;DELAYED_RENDERING&quot;,
+    &quot;emulated&quot;: true,
+    &quot;injected_at&quot;: &quot;2026-10-19T08:32:17.131Z&quot;,
+    &quot;mutation_version&quot;: &quot;1.0.1&quot;,
+    &quot;expected_failure_type&quot;: &quot;ACTIONABILITY_FAILURE&quot;,
+    &quot;injection_verified&quot;: true,
+    &quot;expected_status&quot;: &quot;PASS&quot;,
+    &quot;classification_source&quot;: &quot;HEURISTIC&quot;,
+    &quot;failure_phase&quot;: &quot;test&quot;,
+    &quot;error_message&quot;: &quot;TimeoutError: locator.click: Timeout 500ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole(&#x27;button&#x27;, { name: &#x27;Place order&#x27;, exact: true, includeHidden: true })\u001b[22m\n\u001b[2m    - locator resolved to &lt;button hidden=\&quot;\&quot; type=\&quot;submit\&quot;&gt;Place order&lt;/button&gt;\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not visible\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not visible\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m    - element is not visible\u001b[22m\n\u001b[2m  - retrying click action\u001b[22m\n\u001b[2m    - waiting 500ms\u001b[22m\n&quot;,
+    &quot;error_stack&quot;: &quot;TimeoutError: locator.click: Timeout 500ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole(&#x27;button&#x27;, { name: &#x27;Place order&#x27;, exact: true, includeHidden: true })\u001b[22m\n\u001b[2m    - locator resolved to &lt;button hidden=\&quot;\&quot; type=\&quot;submit\&quot;&gt;Place order&lt;/button&gt;\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not visible\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not visible\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m    - element is not visible\u001b[22m\n\u001b[2m  - retrying click action\u001b[22m\n\u001b[2m    - waiting 500ms\u001b[22m\n\n    at /Users/chetanachark/predictive-test-app/automation/experiments/timeout-mutation/actionability.spec.js:21:20&quot;,
+    &quot;runtime_errors&quot;: [],
+    &quot;project_name&quot;: &quot;chromium&quot;,
+    &quot;worker_index&quot;: 6,
+    &quot;repeat_index&quot;: 0
+  }
+]
+
+</code></pre><h3>CSV</h3><pre><code>
+schema_version,record_type,run_id,attempt_id,test_id,test_name,suite_name,browser,status,failure_type,duration_ms,retry_count,start_time,end_time,app_version,test_version,trace_path,screenshot_path,notes,framework_version,playwright_version,timestamp,environment,locator_mutation,fault_variant,experiment_id,scenario_variant,fault_type,emulated,injected_at,mutation_version,expected_failure_type,injection_verified,expected_status,classification_source,failure_phase,error_message,error_stack,runtime_errors,project_name,worker_index,repeat_index
+2,TEST_ATTEMPT,33360b84-cec5-4cde-b94f-deeea2c13662,e27f4684-4651-4ea4-9c70-6cb65e0cb6f1,EXPASSERT-001,EXPASSERT-001 SAVE10 business oracle detects the emulated five-percent defect,assertion.spec.js,chromium,FAIL,ASSERTION_MISMATCH,1387,0,2026-10-19T08:32:03.688Z,2026-10-19T08:32:05.075Z,0.0.0+sha256:d6625e949e7a6e04a810b6bdd5485f495166ae39612263c5b8af35023e717145,1.0.0+sha256:82e3b9a875e19c849b77c43289afe65728896bd644681213dbf684af1c46fb50,artifacts/33360b84-cec5-4cde-b94f-deeea2c13662/e27f4684-4651-4ea4-9c70-6cb65e0cb6f1/trace.zip,artifacts/33360b84-cec5-4cde-b94f-deeea2c13662/e27f4684-4651-4ea4-9c70-6cb65e0cb6f1/screenshot.png,&quot;{&quot;&quot;method&quot;&quot;:&quot;&quot;browser-module-response&quot;&quot;,&quot;&quot;module&quot;&quot;:&quot;&quot;/src/context/shopState.js&quot;&quot;,&quot;&quot;original_sha256&quot;&quot;:&quot;&quot;2bf5b7dd20a610ca9fcd6ec3938675ac31ce21325e9ca634121080503830c2d0&quot;&quot;,&quot;&quot;mutated_sha256&quot;&quot;:&quot;&quot;d051f2050fed9826c2ff026e06efa7f3c14f91b1adcb611649f9a7e2410e1738&quot;&quot;,&quot;&quot;anchor&quot;&quot;:&quot;&quot;SAVE10:\\s*0?\\.1\\b&quot;&quot;,&quot;&quot;replacement&quot;&quot;:&quot;&quot;SAVE10: 0.05&quot;&quot;,&quot;&quot;experiment_id&quot;&quot;:&quot;&quot;S4-ASSERT-001-v1&quot;&quot;,&quot;&quot;mutation_version&quot;&quot;:&quot;&quot;1.0.1&quot;&quot;,&quot;&quot;observation&quot;&quot;:&quot;&quot;SAVE10 produced 2500 discount on a 50000 subtotal (5%).&quot;&quot;}
+Observed failure symptom; heuristic classification is not ground-truth root cause.
+Failed step: Expect &quot;&quot;toHaveText&quot;&quot;&quot;,1.0.0,1.64.1,2026-10-19T08:32:03.448Z,&quot;{&quot;&quot;node_version&quot;&quot;:&quot;&quot;v22.23.2&quot;&quot;,&quot;&quot;platform&quot;&quot;:&quot;&quot;darwin&quot;&quot;,&quot;&quot;architecture&quot;&quot;:&quot;&quot;arm64&quot;&quot;,&quot;&quot;os_release&quot;&quot;:&quot;&quot;27.0.0&quot;&quot;,&quot;&quot;hostname&quot;&quot;:&quot;&quot;Chetanachars-MacBook-Pro.local&quot;&quot;,&quot;&quot;ci&quot;&quot;:false,&quot;&quot;workers&quot;&quot;:1,&quot;&quot;git_commit&quot;&quot;:&quot;&quot;7fc683db835ed3f99db1c44b206513ecaf25a66a&quot;&quot;}&quot;,,save10-five-percent.v1,S4-ASSERT-001-v1,coupon-save10,COUPON_RATE_DEFECT,true,2026-10-19T08:32:03.882Z,1.0.1,ASSERTION_MISMATCH,true,PASS,HEURISTIC,test,&quot;Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveText[2m([22m[32mexpected[39m[2m)[22m failed
+
+Locator:  locator(&#x27;p&#x27;).filter({ hasText: /^Discount:/ }).locator(&#x27;strong&#x27;)
+Expected: [32m&quot;&quot;₹[7m5,0[27m00&quot;&quot;[39m
+Received: [31m&quot;&quot;₹[7m2,5[27m00&quot;&quot;[39m
+Timeout:  800ms
+
+Call log:
+[2m  - Expect &quot;&quot;toHaveText&quot;&quot; locator(&#x27;p&#x27;).filter({ hasText: /^Discount:/ }).locator(&#x27;strong&#x27;) with timeout 800ms[22m
+[2m  - waiting for locator(&#x27;p&#x27;).filter({ hasText: /^Discount:/ }).locator(&#x27;strong&#x27;)[22m
+[2m    9 × locator resolved to &lt;strong&gt;₹2,500&lt;/strong&gt;[22m
+[2m      - unexpected value &quot;&quot;₹2,500&quot;&quot;[22m
+&quot;,&quot;Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveText[2m([22m[32mexpected[39m[2m)[22m failed
+
+Locator:  locator(&#x27;p&#x27;).filter({ hasText: /^Discount:/ }).locator(&#x27;strong&#x27;)
+Expected: [32m&quot;&quot;₹[7m5,0[27m00&quot;&quot;[39m
+Received: [31m&quot;&quot;₹[7m2,5[27m00&quot;&quot;[39m
+Timeout:  800ms
+
+Call log:
+[2m  - Expect &quot;&quot;toHaveText&quot;&quot; locator(&#x27;p&#x27;).filter({ hasText: /^Discount:/ }).locator(&#x27;strong&#x27;) with timeout 800ms[22m
+[2m  - waiting for locator(&#x27;p&#x27;).filter({ hasText: /^Discount:/ }).locator(&#x27;strong&#x27;)[22m
+[2m    9 × locator resolved to &lt;strong&gt;₹2,500&lt;/strong&gt;[22m
+[2m      - unexpected value &quot;&quot;₹2,500&quot;&quot;[22m
+
+    at /Users/chetanachark/predictive-test-app/automation/experiments/assertion-mutation/assertion.spec.js:14:39&quot;,[],chromium,0,0
+2,TEST_ATTEMPT,33360b84-cec5-4cde-b94f-deeea2c13662,2dab7e71-b19b-4be5-8bc3-9eca60a6bf2c,EXPBASE-001,EXPBASE-001 healthy checkout-navigation,Healthy checkout-navigation,chromium,PASS,,513,0,2026-10-19T08:32:05.460Z,2026-10-19T08:32:05.973Z,0.0.0+sha256:d6625e949e7a6e04a810b6bdd5485f495166ae39612263c5b8af35023e717145,1.0.0+sha256:82e3b9a875e19c849b77c43289afe65728896bd644681213dbf684af1c46fb50,,,,1.0.0,1.64.1,2026-10-19T08:32:03.448Z,&quot;{&quot;&quot;node_version&quot;&quot;:&quot;&quot;v22.23.2&quot;&quot;,&quot;&quot;platform&quot;&quot;:&quot;&quot;darwin&quot;&quot;,&quot;&quot;architecture&quot;&quot;:&quot;&quot;arm64&quot;&quot;,&quot;&quot;os_release&quot;&quot;:&quot;&quot;27.0.0&quot;&quot;,&quot;&quot;hostname&quot;&quot;:&quot;&quot;Chetanachars-MacBook-Pro.local&quot;&quot;,&quot;&quot;ci&quot;&quot;:false,&quot;&quot;workers&quot;&quot;:1,&quot;&quot;git_commit&quot;&quot;:&quot;&quot;7fc683db835ed3f99db1c44b206513ecaf25a66a&quot;&quot;}&quot;,,healthy-control.v1,S4-BASE-001-v1,checkout-navigation,,false,,1.0.1,,false,PASS,NONE,test,,,[],chromium,1,0
+2,TEST_ATTEMPT,33360b84-cec5-4cde-b94f-deeea2c13662,59cb394a-18dc-4315-bccc-2ca67cf3dfb8,EXPLOC-001,EXPLOC-001 original checkout locator detects a DOM mutation,Locator mutation 001,chromium,FAIL,LOCATOR_NOT_FOUND,967,0,2026-10-19T08:32:08.966Z,2026-10-19T08:32:09.933Z,0.0.0+sha256:d6625e949e7a6e04a810b6bdd5485f495166ae39612263c5b8af35023e717145,1.0.0+sha256:82e3b9a875e19c849b77c43289afe65728896bd644681213dbf684af1c46fb50,artifacts/33360b84-cec5-4cde-b94f-deeea2c13662/59cb394a-18dc-4315-bccc-2ca67cf3dfb8/trace.zip,artifacts/33360b84-cec5-4cde-b94f-deeea2c13662/59cb394a-18dc-4315-bccc-2ca67cf3dfb8/screenshot.png,&quot;{&quot;&quot;method&quot;&quot;:&quot;&quot;isolated-browser-dom&quot;&quot;,&quot;&quot;operation&quot;&quot;:&quot;&quot;rename&quot;&quot;,&quot;&quot;original&quot;&quot;:{&quot;&quot;text&quot;&quot;:&quot;&quot;Proceed to checkout&quot;&quot;,&quot;&quot;hidden&quot;&quot;:false,&quot;&quot;disabled&quot;&quot;:false,&quot;&quot;display&quot;&quot;:&quot;&quot;&quot;&quot;,&quot;&quot;displayPriority&quot;&quot;:&quot;&quot;&quot;&quot;},&quot;&quot;experiment_id&quot;&quot;:&quot;&quot;S4-LOC-001-v1&quot;&quot;,&quot;&quot;mutation_version&quot;&quot;:&quot;&quot;1.0.1&quot;&quot;,&quot;&quot;observation&quot;&quot;:&quot;&quot;Original accessible name absent; renamed checkout link present.&quot;&quot;}
+Observed failure symptom; heuristic classification is not ground-truth root cause.
+Failed step: Click&quot;,1.0.0,1.64.1,2026-10-19T08:32:03.448Z,&quot;{&quot;&quot;node_version&quot;&quot;:&quot;&quot;v22.23.2&quot;&quot;,&quot;&quot;platform&quot;&quot;:&quot;&quot;darwin&quot;&quot;,&quot;&quot;architecture&quot;&quot;:&quot;&quot;arm64&quot;&quot;,&quot;&quot;os_release&quot;&quot;:&quot;&quot;27.0.0&quot;&quot;,&quot;&quot;hostname&quot;&quot;:&quot;&quot;Chetanachars-MacBook-Pro.local&quot;&quot;,&quot;&quot;ci&quot;&quot;:false,&quot;&quot;workers&quot;&quot;:1,&quot;&quot;git_commit&quot;&quot;:&quot;&quot;7fc683db835ed3f99db1c44b206513ecaf25a66a&quot;&quot;}&quot;,rename,checkout-name-change.v1,S4-LOC-001-v1,checkout-navigation,ACCESSIBLE_NAME_CHANGE,true,2026-10-19T08:32:09.374Z,1.0.1,LOCATOR_NOT_FOUND,true,PASS,HEURISTIC,test,&quot;TimeoutError: locator.click: Timeout 500ms exceeded.
+Call log:
+[2m  - waiting for getByRole(&#x27;link&#x27;, { name: &#x27;Proceed to checkout&#x27;, exact: true })[22m
+&quot;,&quot;TimeoutError: locator.click: Timeout 500ms exceeded.
+Call log:
+[2m  - waiting for getByRole(&#x27;link&#x27;, { name: &#x27;Proceed to checkout&#x27;, exact: true })[22m
+
+    at /Users/chetanachark/predictive-test-app/automation/experiments/locator-mutation/locator.spec.js:22:35&quot;,[],chromium,1,0
+2,TEST_ATTEMPT,33360b84-cec5-4cde-b94f-deeea2c13662,102fbd4e-47ca-4557-99df-6a0b24942ce8,EXPLOC-002,EXPLOC-002 original checkout locator detects a DOM mutation,Locator mutation 002,chromium,FAIL,LOCATOR_AMBIGUOUS,455,0,2026-10-19T08:32:10.224Z,2026-10-19T08:32:10.679Z,0.0.0+sha256:d6625e949e7a6e04a810b6bdd5485f495166ae39612263c5b8af35023e717145,1.0.0+sha256:82e3b9a875e19c849b77c43289afe65728896bd644681213dbf684af1c46fb50,artifacts/33360b84-cec5-4cde-b94f-deeea2c13662/102fbd4e-47ca-4557-99df-6a0b24942ce8/trace.zip,artifacts/33360b84-cec5-4cde-b94f-deeea2c13662/102fbd4e-47ca-4557-99df-6a0b24942ce8/screenshot.png,&quot;{&quot;&quot;method&quot;&quot;:&quot;&quot;isolated-browser-dom&quot;&quot;,&quot;&quot;operation&quot;&quot;:&quot;&quot;duplicate&quot;&quot;,&quot;&quot;original&quot;&quot;:{&quot;&quot;text&quot;&quot;:&quot;&quot;Proceed to checkout&quot;&quot;,&quot;&quot;hidden&quot;&quot;:false,&quot;&quot;disabled&quot;&quot;:false,&quot;&quot;display&quot;&quot;:&quot;&quot;&quot;&quot;,&quot;&quot;displayPriority&quot;&quot;:&quot;&quot;&quot;&quot;},&quot;&quot;experiment_id&quot;&quot;:&quot;&quot;S4-LOC-002-v1&quot;&quot;,&quot;&quot;mutation_version&quot;&quot;:&quot;&quot;1.0.1&quot;&quot;,&quot;&quot;observation&quot;&quot;:&quot;&quot;Two links match the unchanged checkout locator.&quot;&quot;}
+Observed failure symptom; heuristic classification is not ground-truth root cause.
+Failed step: Click&quot;,1.0.0,1.64.1,2026-10-19T08:32:03.448Z,&quot;{&quot;&quot;node_version&quot;&quot;:&quot;&quot;v22.23.2&quot;&quot;,&quot;&quot;platform&quot;&quot;:&quot;&quot;darwin&quot;&quot;,&quot;&quot;architecture&quot;&quot;:&quot;&quot;arm64&quot;&quot;,&quot;&quot;os_release&quot;&quot;:&quot;&quot;27.0.0&quot;&quot;,&quot;&quot;hostname&quot;&quot;:&quot;&quot;Chetanachars-MacBook-Pro.local&quot;&quot;,&quot;&quot;ci&quot;&quot;:false,&quot;&quot;workers&quot;&quot;:1,&quot;&quot;git_commit&quot;&quot;:&quot;&quot;7fc683db835ed3f99db1c44b206513ecaf25a66a&quot;&quot;}&quot;,duplicate,duplicate-checkout-link.v1,S4-LOC-002-v1,checkout-navigation,DUPLICATE_MATCH,true,2026-10-19T08:32:10.720Z,1.0.1,LOCATOR_AMBIGUOUS,true,PASS,HEURISTIC,test,&quot;Error: locator.click: Error: strict mode violation: getByRole(&#x27;link&#x27;, { name: &#x27;Proceed to checkout&#x27;, exact: true }) resolved to 2 elements:
+    1) &lt;a class=&quot;&quot;button&quot;&quot; href=&quot;&quot;/checkout&quot;&quot; data-discover=&quot;&quot;true&quot;&quot;&gt;Proceed to checkout&lt;/a&gt; aka getByRole(&#x27;link&#x27;, { name: &#x27;Proceed to checkout&#x27; }).first()
+    2) &lt;a class=&quot;&quot;button&quot;&quot; href=&quot;&quot;/checkout&quot;&quot; data-discover=&quot;&quot;true&quot;&quot;&gt;Proceed to checkout&lt;/a&gt; aka getByRole(&#x27;link&#x27;, { name: &#x27;Proceed to checkout&#x27; }).nth(1)
+
+Call log:
+[2m  - waiting for getByRole(&#x27;link&#x27;, { name: &#x27;Proceed to checkout&#x27;, exact: true })[22m
+&quot;,&quot;Error: locator.click: Error: strict mode violation: getByRole(&#x27;link&#x27;, { name: &#x27;Proceed to checkout&#x27;, exact: true }) resolved to 2 elements:
+    1) &lt;a class=&quot;&quot;button&quot;&quot; href=&quot;&quot;/checkout&quot;&quot; data-discover=&quot;&quot;true&quot;&quot;&gt;Proceed to checkout&lt;/a&gt; aka getByRole(&#x27;link&#x27;, { name: &#x27;Proceed to checkout&#x27; }).first()
+    2) &lt;a class=&quot;&quot;button&quot;&quot; href=&quot;&quot;/checkout&quot;&quot; data-discover=&quot;&quot;true&quot;&quot;&gt;Proceed to checkout&lt;/a&gt; aka getByRole(&#x27;link&#x27;, { name: &#x27;Proceed to checkout&#x27; }).nth(1)
+
+Call log:
+[2m  - waiting for getByRole(&#x27;link&#x27;, { name: &#x27;Proceed to checkout&#x27;, exact: true })[22m
+
+    at /Users/chetanachark/predictive-test-app/automation/experiments/locator-mutation/locator.spec.js:22:35&quot;,[],chromium,2,0
+2,TEST_ATTEMPT,33360b84-cec5-4cde-b94f-deeea2c13662,ba5ba644-9a11-4bf3-b5db-b80360b11134,EXPSTATE-001,EXPSTATE-001 checkout state invariant detects a controlled commit defect,State mutation 001,chromium,FAIL,STATE_CONSISTENCY_FAILURE,1487,0,2026-10-19T08:32:11.047Z,2026-10-19T08:32:12.534Z,0.0.0+sha256:d6625e949e7a6e04a810b6bdd5485f495166ae39612263c5b8af35023e717145,1.0.0+sha256:82e3b9a875e19c849b77c43289afe65728896bd644681213dbf684af1c46fb50,artifacts/33360b84-cec5-4cde-b94f-deeea2c13662/ba5ba644-9a11-4bf3-b5db-b80360b11134/trace.zip,artifacts/33360b84-cec5-4cde-b94f-deeea2c13662/ba5ba644-9a11-4bf3-b5db-b80360b11134/screenshot.png,&quot;{&quot;&quot;method&quot;&quot;:&quot;&quot;browser-module-response&quot;&quot;,&quot;&quot;module&quot;&quot;:&quot;&quot;/src/context/shopState.js&quot;&quot;,&quot;&quot;original_sha256&quot;&quot;:&quot;&quot;2bf5b7dd20a610ca9fcd6ec3938675ac31ce21325e9ca634121080503830c2d0&quot;&quot;,&quot;&quot;mutated_sha256&quot;&quot;:&quot;&quot;b8cddb0a5bd14032bf7155a9d255dd30a814d468f443e3b01d19e479d0e66c08&quot;&quot;,&quot;&quot;anchor&quot;&quot;:&quot;&quot;stock:\\s*product\\.stock\\s*-\\s*\\(items\\.find\\(\\(?item\\)?\\s*=&gt;\\s*item\\.id\\s*===\\s*product\\.id\\)\\?\\.quantity\\s*\\?\\?\\s*0\\)&quot;&quot;,&quot;&quot;replacement&quot;&quot;:&quot;&quot;stock: product.stock&quot;&quot;,&quot;&quot;experiment_id&quot;&quot;:&quot;&quot;S4-STATE-001-v1&quot;&quot;,&quot;&quot;mutation_version&quot;&quot;:&quot;&quot;1.0.1&quot;&quot;,&quot;&quot;observation&quot;&quot;:&quot;&quot;Order confirmed but Laptop stock remains at 5.&quot;&quot;}
+Researcher-labeled failure of the explicitly checked state invariant.
+Failed step: Expect &quot;&quot;toBeVisible&quot;&quot;&quot;,1.0.0,1.64.1,2026-10-19T08:32:03.448Z,&quot;{&quot;&quot;node_version&quot;&quot;:&quot;&quot;v22.23.2&quot;&quot;,&quot;&quot;platform&quot;&quot;:&quot;&quot;darwin&quot;&quot;,&quot;&quot;architecture&quot;&quot;:&quot;&quot;arm64&quot;&quot;,&quot;&quot;os_release&quot;&quot;:&quot;&quot;27.0.0&quot;&quot;,&quot;&quot;hostname&quot;&quot;:&quot;&quot;Chetanachars-MacBook-Pro.local&quot;&quot;,&quot;&quot;ci&quot;&quot;:false,&quot;&quot;workers&quot;&quot;:1,&quot;&quot;git_commit&quot;&quot;:&quot;&quot;7fc683db835ed3f99db1c44b206513ecaf25a66a&quot;&quot;}&quot;,,stock-not-reduced.v1,S4-STATE-001-v1,stock-after-order,STOCK_COMMIT_DEFECT,true,2026-10-19T08:32:11.229Z,1.0.1,STATE_CONSISTENCY_FAILURE,true,PASS,ANNOTATION,test,&quot;Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+Locator: getByRole(&#x27;article&#x27;, { name: &#x27;Laptop&#x27;, exact: true }).getByText(&#x27;In stock: 4&#x27;, { exact: true })
+Expected: visible
+Timeout: 800ms
+Error: element(s) not found
+
+Call log:
+[2m  - Expect &quot;&quot;toBeVisible&quot;&quot; getByRole(&#x27;article&#x27;, { name: &#x27;Laptop&#x27;, exact: true }).getByText(&#x27;In stock: 4&#x27;, { exact: true }) with timeout 800ms[22m
+[2m  - waiting for getByRole(&#x27;article&#x27;, { name: &#x27;Laptop&#x27;, exact: true }).getByText(&#x27;In stock: 4&#x27;, { exact: true })[22m
+&quot;,&quot;Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+Locator: getByRole(&#x27;article&#x27;, { name: &#x27;Laptop&#x27;, exact: true }).getByText(&#x27;In stock: 4&#x27;, { exact: true })
+Expected: visible
+Timeout: 800ms
+Error: element(s) not found
+
+Call log:
+[2m  - Expect &quot;&quot;toBeVisible&quot;&quot; getByRole(&#x27;article&#x27;, { name: &#x27;Laptop&#x27;, exact: true }).getByText(&#x27;In stock: 4&#x27;, { exact: true }) with timeout 800ms[22m
+[2m  - waiting for getByRole(&#x27;article&#x27;, { name: &#x27;Laptop&#x27;, exact: true }).getByText(&#x27;In stock: 4&#x27;, { exact: true })[22m
+
+    at assertion (/Users/chetanachark/predictive-test-app/automation/experiments/state-mutation/state.spec.js:17:130)
+    at assertStateInvariant (/Users/chetanachark/predictive-test-app/automation/experiments/injector.js:94:15)
+    at /Users/chetanachark/predictive-test-app/automation/experiments/state-mutation/state.spec.js:17:15&quot;,[],chromium,3,0
+2,TEST_ATTEMPT,33360b84-cec5-4cde-b94f-deeea2c13662,edd23c05-a65b-447b-bb11-8671b0ea9570,EXPACTION-001,EXPACTION-001 checkout cannot act on an unavailable control,Actionability mutation 001,chromium,FAIL,ACTIONABILITY_FAILURE,1055,0,2026-10-19T08:32:16.552Z,2026-10-19T08:32:17.607Z,0.0.0+sha256:d6625e949e7a6e04a810b6bdd5485f495166ae39612263c5b8af35023e717145,1.0.0+sha256:82e3b9a875e19c849b77c43289afe65728896bd644681213dbf684af1c46fb50,artifacts/33360b84-cec5-4cde-b94f-deeea2c13662/edd23c05-a65b-447b-bb11-8671b0ea9570/trace.zip,artifacts/33360b84-cec5-4cde-b94f-deeea2c13662/edd23c05-a65b-447b-bb11-8671b0ea9570/screenshot.png,&quot;{&quot;&quot;method&quot;&quot;:&quot;&quot;isolated-browser-dom&quot;&quot;,&quot;&quot;operation&quot;&quot;:&quot;&quot;delay&quot;&quot;,&quot;&quot;original&quot;&quot;:{&quot;&quot;text&quot;&quot;:&quot;&quot;Place order&quot;&quot;,&quot;&quot;hidden&quot;&quot;:false,&quot;&quot;disabled&quot;&quot;:false,&quot;&quot;display&quot;&quot;:&quot;&quot;&quot;&quot;,&quot;&quot;displayPriority&quot;&quot;:&quot;&quot;&quot;&quot;},&quot;&quot;experiment_id&quot;&quot;:&quot;&quot;S4-ACTION-001-v1&quot;&quot;,&quot;&quot;mutation_version&quot;&quot;:&quot;&quot;1.0.1&quot;&quot;,&quot;&quot;observation&quot;&quot;:&quot;&quot;Unique submit button exists but is not rendered.&quot;&quot;}
+Observed failure symptom; heuristic classification is not ground-truth root cause.
+Failed step: Click&quot;,1.0.0,1.64.1,2026-10-19T08:32:03.448Z,&quot;{&quot;&quot;node_version&quot;&quot;:&quot;&quot;v22.23.2&quot;&quot;,&quot;&quot;platform&quot;&quot;:&quot;&quot;darwin&quot;&quot;,&quot;&quot;architecture&quot;&quot;:&quot;&quot;arm64&quot;&quot;,&quot;&quot;os_release&quot;&quot;:&quot;&quot;27.0.0&quot;&quot;,&quot;&quot;hostname&quot;&quot;:&quot;&quot;Chetanachars-MacBook-Pro.local&quot;&quot;,&quot;&quot;ci&quot;&quot;:false,&quot;&quot;workers&quot;&quot;:1,&quot;&quot;git_commit&quot;&quot;:&quot;&quot;7fc683db835ed3f99db1c44b206513ecaf25a66a&quot;&quot;}&quot;,,delayed-control-render.v1,S4-ACTION-001-v1,checkout-action,DELAYED_RENDERING,true,2026-10-19T08:32:17.131Z,1.0.1,ACTIONABILITY_FAILURE,true,PASS,HEURISTIC,test,&quot;TimeoutError: locator.click: Timeout 500ms exceeded.
+Call log:
+[2m  - waiting for getByRole(&#x27;button&#x27;, { name: &#x27;Place order&#x27;, exact: true, includeHidden: true })[22m
+[2m    - locator resolved to &lt;button hidden=&quot;&quot;&quot;&quot; type=&quot;&quot;submit&quot;&quot;&gt;Place order&lt;/button&gt;[22m
+[2m  - attempting click action[22m
+[2m    2 × waiting for element to be visible, enabled and stable[22m
+[2m      - element is not visible[22m
+[2m    - retrying click action[22m
+[2m    - waiting 20ms[22m
+[2m    2 × waiting for element to be visible, enabled and stable[22m
+[2m      - element is not visible[22m
+[2m    - retrying click action[22m
+[2m      - waiting 100ms[22m
+[2m    - waiting for element to be visible, enabled and stable[22m
+[2m    - element is not visible[22m
+[2m  - retrying click action[22m
+[2m    - waiting 500ms[22m
+&quot;,&quot;TimeoutError: locator.click: Timeout 500ms exceeded.
+Call log:
+[2m  - waiting for getByRole(&#x27;button&#x27;, { name: &#x27;Place order&#x27;, exact: true, includeHidden: true })[22m
+[2m    - locator resolved to &lt;button hidden=&quot;&quot;&quot;&quot; type=&quot;&quot;submit&quot;&quot;&gt;Place order&lt;/button&gt;[22m
+[2m  - attempting click action[22m
+[2m    2 × waiting for element to be visible, enabled and stable[22m
+[2m      - element is not visible[22m
+[2m    - retrying click action[22m
+[2m    - waiting 20ms[22m
+[2m    2 × waiting for element to be visible, enabled and stable[22m
+[2m      - element is not visible[22m
+[2m    - retrying click action[22m
+[2m      - waiting 100ms[22m
+[2m    - waiting for element to be visible, enabled and stable[22m
+[2m    - element is not visible[22m
+[2m  - retrying click action[22m
+[2m    - waiting 500ms[22m
+
+    at /Users/chetanachark/predictive-test-app/automation/experiments/timeout-mutation/actionability.spec.js:21:20&quot;,[],chromium,6,0
+
+</code></pre></section></body></html>

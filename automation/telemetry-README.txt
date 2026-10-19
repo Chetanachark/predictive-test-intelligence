@@ -1,3 +1,5 @@
+SCHEMA UPDATE: Sprint 4 adds telemetry schema v2. Run npm run telemetry:migrate before ordinary E2E writes to legacy history; the experiment runner migrates automatically. See experiments/README.md and telemetry/record.schema.json for the current experiment fields. The Sprint 3 guide below documents the original foundation.
+
 SPRINT 3 — DATASET FOUNDATION AND TELEMETRY
 
 Scope
