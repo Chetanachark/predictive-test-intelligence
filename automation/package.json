@@ -21,7 +21,9 @@
     "experiments:list": "playwright test --config experiments/playwright.config.js --list",
     "experiments:inspect": "node experiments/inspect.js",
     "experiments:report": "playwright show-report reports/experiments/html",
-    "test:experiments": "node --test experiments/experiment.test.js"
+    "test:experiments": "node --test experiments/experiment.test.js",
+    "intelligence": "node intelligence/intelligenceReport.js",
+    "test:intelligence": "node --test intelligence/intelligence.test.js"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1"
