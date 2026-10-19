@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+*.tmp
+datasets/
+training-data.csv
+prediction-input.json
+latest-dataset.json
+evaluation-report.json
+prediction-report.json
+models/*
+!models/.gitkeep
+
+feature-importance.json
+comparison-report.json

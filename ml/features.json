@@ -1,0 +1,172 @@
+{
+  "schema_version": 2,
+  "target": "next_execution_failed",
+  "target_definition": "Final FAIL or TIMED_OUT after configured retries/healing for the next logical execution; PASS is 0. Invalid business input correctly rejected by a passing test remains 0.",
+  "prediction_boundary": "Before the target execution starts. Only executions ending strictly before prediction_time contribute to features.",
+  "window_size": 10,
+  "minimum_history": 2,
+  "feature_order": [
+    "failure_rate",
+    "retry_rate",
+    "stability_score",
+    "average_duration",
+    "duration_variance",
+    "locator_failure_rate",
+    "actionability_failure_rate",
+    "healing_success_rate",
+    "knowledge_base_hit_rate",
+    "risk_score",
+    "failure_streak",
+    "pass_streak",
+    "duration_trend",
+    "duration_growth_rate",
+    "retry_trend",
+    "locator_volatility_index",
+    "healing_reliance_score",
+    "healing_success_momentum",
+    "mean_time_between_failures",
+    "recent_failure_rate"
+  ],
+  "features": {
+    "failure_rate": {
+      "minimum": 0,
+      "maximum": 1,
+      "nullable": false,
+      "definition": "Fraction of prior logical executions with final FAIL/TIMED_OUT."
+    },
+    "retry_rate": {
+      "minimum": 0,
+      "maximum": 1,
+      "nullable": false,
+      "definition": "Fraction of prior logical executions with additional attempts."
+    },
+    "stability_score": {
+      "minimum": 0,
+      "maximum": 100,
+      "nullable": false,
+      "definition": "100 * (1 - prior failure_rate)."
+    },
+    "average_duration": {
+      "minimum": 0,
+      "nullable": false,
+      "unit": "ms",
+      "definition": "Mean summed attempt duration per prior logical execution; excludes waiting between retries."
+    },
+    "duration_variance": {
+      "minimum": 0,
+      "nullable": false,
+      "unit": "ms_squared",
+      "definition": "Population variance of those prior logical execution durations."
+    },
+    "locator_failure_rate": {
+      "minimum": 0,
+      "maximum": 1,
+      "nullable": false,
+      "definition": "Fraction of prior executions with observed LOCATOR_NOT_FOUND/LOCATOR_AMBIGUOUS in any attempt or original_failure_type, including recovered symptoms."
+    },
+    "actionability_failure_rate": {
+      "minimum": 0,
+      "maximum": 1,
+      "nullable": false,
+      "definition": "Fraction of prior executions with observed ACTIONABILITY_FAILURE in any attempt or original_failure_type."
+    },
+    "healing_success_rate": {
+      "minimum": 0,
+      "maximum": 1,
+      "nullable": true,
+      "definition": "Final passing verified recoveries / prior executions attempting healing; null without prior opportunities."
+    },
+    "knowledge_base_hit_rate": {
+      "minimum": 0,
+      "maximum": 1,
+      "nullable": true,
+      "definition": "Prior executions with a knowledge hit / prior learning-enabled executions attempting healing; null without prior opportunities."
+    },
+    "risk_score": {
+      "minimum": 0,
+      "maximum": 100,
+      "nullable": false,
+      "definition": "Recomputed exclusively from the historical window: 100 * (0.60 * failure_rate + 0.25 * retry_rate + 0.15 * locator_failure_rate). Never reads an intelligence report."
+    },
+    "failure_streak": {
+      "nullable": false,
+      "definition": "Consecutive failed executions at the end of the available historical window; capped at 10.",
+      "minimum": 0
+    },
+    "pass_streak": {
+      "nullable": false,
+      "definition": "Consecutive passing executions at the end of the available historical window; capped at 10.",
+      "minimum": 0
+    },
+    "duration_trend": {
+      "nullable": false,
+      "definition": "OLS slope of summed durations over the latest 5 completed executions, ms per execution."
+    },
+    "duration_growth_rate": {
+      "nullable": false,
+      "definition": "(Mean duration of newer half - older half) / max(older mean, 1), using the latest 5 completed executions.",
+      "minimum": -1
+    },
+    "retry_trend": {
+      "nullable": false,
+      "definition": "OLS slope of binary retry indicators over the latest 5 completed executions.",
+      "minimum": -1,
+      "maximum": 1
+    },
+    "locator_volatility_index": {
+      "nullable": false,
+      "definition": "Fraction of adjacent binary locator-symptom indicators changing within the latest 5 completed executions.",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "healing_reliance_score": {
+      "nullable": false,
+      "definition": "Fraction of the latest 5 completed executions attempting healing.",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "healing_success_momentum": {
+      "nullable": true,
+      "definition": "OLS slope of binary verified healing success over healing opportunities in the latest 5 executions; null with fewer than 2 opportunities.",
+      "minimum": -1,
+      "maximum": 1
+    },
+    "mean_time_between_failures": {
+      "nullable": true,
+      "definition": "Mean elapsed milliseconds between final failure end times within the prior 10 executions; null with fewer than 2 failures.",
+      "minimum": 0
+    },
+    "recent_failure_rate": {
+      "nullable": false,
+      "definition": "Failure rate over the latest 5 completed executions.",
+      "minimum": 0,
+      "maximum": 1
+    }
+  },
+  "series_identity": [
+    "cohort",
+    "test_id",
+    "suite_name",
+    "browser",
+    "project_name",
+    "app_version",
+    "healing_mode",
+    "learningEnabled"
+  ],
+  "evaluation": {
+    "test_fraction": 0.2,
+    "minimum_train_rows": 30,
+    "minimum_test_rows": 10,
+    "minimum_train_per_class": 5,
+    "minimum_train_blocks": 2
+  },
+  "limitations": [
+    "Stability and risk are deterministic transformations of other requested features, not independent scientific signals.",
+    "Ordinary and controlled cohorts must be trained/evaluated separately. Current experiment/fault metadata are never predictors.",
+    "Rolling one-step evaluation may use earlier completed held-out outcomes as history; model parameters stay frozen.",
+    "Fixed mutation repetitions can make persistence trivial. Good controlled scores do not establish ordinary-regression prediction or unseen-fault generalization.",
+    "Progression uses isolated episode histories and later whole campaigns as holdout. Results establish controlled temporal-signal utility only, not natural regression generalization."
+  ],
+  "short_window_size": 5,
+  "progression_history_policy": "Campaign block ID is additionally included in progression series keys. Each episode starts a fresh history, including holdout episodes."
+}

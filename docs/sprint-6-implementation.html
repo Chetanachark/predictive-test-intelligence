@@ -1,0 +1,3434 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sprint 6 — complete implementation</title><style>body{max-width:1100px;margin:36px auto;padding:0 20px;font:16px/1.6 system-ui;color:#182336;background:#fafbfd}a{color:#1750a6}pre{background:#101b2b;color:#e3edf8;padding:20px;overflow:auto;border-radius:8px;font:13px/1.6 ui-monospace,monospace}h2{margin-top:48px}li{margin:5px 0}</style><h1>Sprint 6 — Complete Implementation</h1><p>Full source of every created or modified implementation file. The application source is unchanged. See the included README for architecture, policy, telemetry changes, evaluation metrics, and verification commands.</p>
+<h2>Files created</h2><ul>
+<li><a href="#automation/healing/README.txt">automation/healing/README.txt</a></li>
+<li><a href="#automation/healing/candidateDiscovery.js">automation/healing/candidateDiscovery.js</a></li>
+<li><a href="#automation/healing/candidateRanking.js">automation/healing/candidateRanking.js</a></li>
+<li><a href="#automation/healing/confidenceScore.js">automation/healing/confidenceScore.js</a></li>
+<li><a href="#automation/healing/engine.playwright.config.js">automation/healing/engine.playwright.config.js</a></li>
+<li><a href="#automation/healing/evaluation/evaluation.spec.js">automation/healing/evaluation/evaluation.spec.js</a></li>
+<li><a href="#automation/healing/evaluation/metrics.js">automation/healing/evaluation/metrics.js</a></li>
+<li><a href="#automation/healing/evaluation/registry.js">automation/healing/evaluation/registry.js</a></li>
+<li><a href="#automation/healing/evaluation/run.js">automation/healing/evaluation/run.js</a></li>
+<li><a href="#automation/healing/fixtures.js">automation/healing/fixtures.js</a></li>
+<li><a href="#automation/healing/healing.test.js">automation/healing/healing.test.js</a></li>
+<li><a href="#automation/healing/healingEngine.js">automation/healing/healingEngine.js</a></li>
+<li><a href="#automation/healing/healingHistory.js">automation/healing/healingHistory.js</a></li>
+<li><a href="#automation/healing/healingReporter.js">automation/healing/healingReporter.js</a></li>
+<li><a href="#automation/healing/playwright.config.js">automation/healing/playwright.config.js</a></li>
+<li><a href="#automation/healing/tests/engine.spec.js">automation/healing/tests/engine.spec.js</a></li>
+<li><a href="#automation/telemetry/record.v2.schema.json">automation/telemetry/record.v2.schema.json</a></li>
+</ul>
+<h2>Files modified</h2><ul>
+<li><a href="#automation/experiments/experiment.test.js">automation/experiments/experiment.test.js</a></li>
+<li><a href="#automation/intelligence/intelligence.test.js">automation/intelligence/intelligence.test.js</a></li>
+<li><a href="#automation/intelligence/intelligenceReport.js">automation/intelligence/intelligenceReport.js</a></li>
+<li><a href="#automation/package.json">automation/package.json</a></li>
+<li><a href="#automation/pages/CartPage.js">automation/pages/CartPage.js</a></li>
+<li><a href="#automation/pages/CheckoutPage.js">automation/pages/CheckoutPage.js</a></li>
+<li><a href="#automation/telemetry/TelemetryReporter.js">automation/telemetry/TelemetryReporter.js</a></li>
+<li><a href="#automation/telemetry/history.js">automation/telemetry/history.js</a></li>
+<li><a href="#automation/telemetry/metadata.js">automation/telemetry/metadata.js</a></li>
+<li><a href="#automation/telemetry/record.schema.json">automation/telemetry/record.schema.json</a></li>
+<li><a href="#automation/telemetry/schema.js">automation/telemetry/schema.js</a></li>
+<li><a href="#automation/telemetry/telemetry.test.js">automation/telemetry/telemetry.test.js</a></li>
+<li><a href="#dataset/.gitignore">dataset/.gitignore</a></li>
+</ul>
+<h2 id="automation/experiments/experiment.test.js">automation/experiments/experiment.test.js</h2><pre><code>import test from &#x27;node:test&#x27;
+import assert from &#x27;node:assert/strict&#x27;
+import fs from &#x27;node:fs&#x27;
+import os from &#x27;node:os&#x27;
+import path from &#x27;node:path&#x27;
+import { randomUUID } from &#x27;node:crypto&#x27;
+import { spawnSync } from &#x27;node:child_process&#x27;
+import { EXPERIMENTS, experimentById, mutateSource } from &#x27;./registry.js&#x27;
+import { validateCampaign } from &#x27;./campaign.js&#x27;
+import { createRunMetadata, experimentMetadata } from &#x27;../telemetry/metadata.js&#x27;
+import { HistoryStore, serializeCSV } from &#x27;../telemetry/history.js&#x27;
+import { validateRecord, upgradeRecord } from &#x27;../telemetry/schema.js&#x27;
+
+const appModule = new URL(&#x27;../../frontend/src/context/shopState.js&#x27;, import.meta.url)
+const productModule = new URL(&#x27;../../frontend/src/data/products.js&#x27;, import.meta.url)
+const original = fs.readFileSync(appModule, &#x27;utf8&#x27;)
+const metadata = createRunMetadata({ workers: 1 })
+
+function legacyRecord() {
+  return {
+    schema_version: 1, record_type: &#x27;TEST_ATTEMPT&#x27;, ...metadata,
+    attempt_id: randomUUID(), test_id: &#x27;TEST-001&#x27;, test_name: &#x27;TEST-001 legacy&#x27;, suite_name: &#x27;Legacy&#x27;, browser: &#x27;chromium&#x27;,
+    status: &#x27;PASS&#x27;, failure_type: null, duration_ms: 5, retry_count: 0,
+    start_time: &#x27;2026-10-19T10:00:00.000Z&#x27;, end_time: &#x27;2026-10-19T10:00:00.005Z&#x27;,
+    trace_path: null, screenshot_path: null, notes: &#x27;&#x27;, locator_mutation: &#x27;&#x27;, fault_variant: &#x27;&#x27;, experiment_id: &#x27;&#x27;, scenario_variant: &#x27;&#x27;,
+    expected_status: &#x27;PASS&#x27;, classification_source: &#x27;NONE&#x27;, failure_phase: &#x27;test&#x27;, error_message: &#x27;&#x27;, error_stack: &#x27;&#x27;,
+    runtime_errors: [], project_name: &#x27;chromium&#x27;, worker_index: 0, repeat_index: 0,
+  }
+}
+function temporary(t) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), &#x27;sut-experiments-&#x27;))
+  t.after(() =&gt; fs.rmSync(directory, { recursive: true, force: true }))
+  return directory
+}
+
+test(&#x27;registry is frozen, uniquely versioned, and includes six controls and nine faults&#x27;, () =&gt; {
+  assert.ok(Object.isFrozen(EXPERIMENTS))
+  assert.ok(EXPERIMENTS.every(Object.isFrozen))
+  assert.equal(EXPERIMENTS.length, 15)
+  assert.equal(new Set(EXPERIMENTS.map(item =&gt; item.id)).size, 15)
+  assert.equal(new Set(EXPERIMENTS.map(item =&gt; item.testId)).size, 15)
+  assert.equal(EXPERIMENTS.filter(item =&gt; item.kind === &#x27;none&#x27;).length, 6)
+  assert.equal(EXPERIMENTS.filter(item =&gt; item.expected).length, 9)
+  assert.throws(() =&gt; experimentById(&#x27;unknown&#x27;), /Unknown/)
+})
+
+for (const definition of EXPERIMENTS.filter(item =&gt; item.kind === &#x27;source&#x27;)) {
+  test(`${definition.id}: source patch creates the specified business defect without writing the SUT`, async () =&gt; {
+    const patched = mutateSource(definition, original)
+    assert.notEqual(patched, original)
+    const syntax = spawnSync(process.execPath, [&#x27;--check&#x27;, &#x27;--input-type=module&#x27;], { input: patched, encoding: &#x27;utf8&#x27; })
+    assert.equal(syntax.status, 0, syntax.stderr)
+    const absoluteImports = patched.replace(&quot;&#x27;../data/products.js&#x27;&quot;, JSON.stringify(productModule.href))
+    const module = await import(`data:text/javascript;base64,${Buffer.from(absoluteImports).toString(&#x27;base64&#x27;)}`)
+    let state = module.createShopState()
+    state = module.updateCart(state, { type: &#x27;add&#x27;, id: 1 })
+    const next = module.completeOrder(state, { name: &#x27;Student&#x27;, email: &#x27;student@example.com&#x27;, address: &#x27;Campus&#x27; }, &#x27;SAVE10&#x27;, &#x27;ORD-TEST&#x27;, &#x27;2026-10-19T10:00:00.000Z&#x27;)
+    if (definition.id === &#x27;S4-ASSERT-001-v1&#x27;) assert.equal(next.orders[0].discount, 2500)
+    if (definition.id === &#x27;S4-STATE-001-v1&#x27;) assert.equal(next.products.find(product =&gt; product.id === 1).stock, 5)
+    if (definition.id === &#x27;S4-STATE-002-v1&#x27;) assert.equal(next.cart.length, 1)
+    if (definition.id === &#x27;S4-STATE-003-v1&#x27;) assert.equal(next.orders[0].total, 46000)
+    assert.equal(fs.readFileSync(appModule, &#x27;utf8&#x27;), original)
+  })
+}
+
+test(&#x27;source changes that remove or duplicate anchors are rejected&#x27;, () =&gt; {
+  const definition = experimentById(&#x27;S4-ASSERT-001-v1&#x27;)
+  assert.throws(() =&gt; mutateSource(definition, &#x27;no anchor&#x27;), /exactly one/)
+  assert.throws(() =&gt; mutateSource(definition, original + original), /exactly one/)
+})
+
+test(&#x27;v3 preserves all legacy values and adds explicit migration defaults&#x27;, () =&gt; {
+  const legacy = legacyRecord()
+  const next = upgradeRecord(legacy)
+  assert.equal(next.schema_version, 3)
+  for (const key of Object.keys(legacy).filter(key =&gt; key !== &#x27;schema_version&#x27;)) assert.deepEqual(next[key], legacy[key])
+  assert.equal(next.emulated, false)
+  assert.equal(next.injected_at, null)
+  assert.equal(next.injection_verified, false)
+  assert.equal(next.expected_failure_type, null)
+})
+
+test(&#x27;migration is backed up, synchronized, idempotent, and preserves rows&#x27;, t =&gt; {
+  const directory = temporary(t); const store = new HistoryStore(directory)
+  const legacy = [legacyRecord(), legacyRecord()]
+  const json = JSON.stringify(legacy, null, 2) + &#x27;\n&#x27;
+  const csv = serializeCSV(legacy)
+  fs.writeFileSync(store.json, json); fs.writeFileSync(store.csv, csv)
+  const result = store.migrate()
+  assert.equal(result.migrated, 2)
+  assert.equal(fs.readFileSync(path.join(result.backup, &#x27;execution-history.v1.json&#x27;), &#x27;utf8&#x27;), json)
+  assert.equal(fs.readFileSync(path.join(result.backup, &#x27;test-history.v1.csv&#x27;), &#x27;utf8&#x27;), csv)
+  assert.deepEqual(store.validate(), legacy.map(upgradeRecord))
+  assert.deepEqual(store.migrate(), { migrated: 0, backup: null })
+})
+
+test(&#x27;append refuses unmigrated history without losing original data&#x27;, t =&gt; {
+  const store = new HistoryStore(temporary(t)); const row = legacyRecord()
+  fs.writeFileSync(store.json, JSON.stringify([row])); fs.writeFileSync(store.csv, serializeCSV([row]))
+  assert.throws(() =&gt; store.append(upgradeRecord(legacyRecord())), /telemetry:migrate/)
+  assert.deepEqual(store.validate(), [row])
+})
+
+test(&#x27;typed experiment metadata rejects malformed booleans and unverified timestamps&#x27;, () =&gt; {
+  assert.throws(() =&gt; experimentMetadata([{ type: &#x27;emulated&#x27;, description: &#x27;yes&#x27; }]))
+  const row = upgradeRecord(legacyRecord())
+  assert.throws(() =&gt; validateRecord({ ...row, emulated: true, injection_verified: true }))
+  assert.throws(() =&gt; validateRecord({ ...row, injected_at: &#x27;not-a-date&#x27; }))
+})
+
+function campaignRows() {
+  const run = randomUUID()
+  return EXPERIMENTS.map(definition =&gt; ({
+    ...upgradeRecord(legacyRecord()), run_id: run, test_id: definition.testId,
+    experiment_id: definition.id, fault_variant: definition.variant, fault_type: definition.faultType,
+    mutation_version: definition.version, scenario_variant: definition.scenario,
+    expected_failure_type: definition.expected, failure_type: definition.expected,
+    classification_source: definition.expected ? &#x27;HEURISTIC&#x27; : &#x27;NONE&#x27;,
+    status: definition.expected ? &#x27;FAIL&#x27; : &#x27;PASS&#x27;, emulated: Boolean(definition.expected),
+    injection_verified: Boolean(definition.expected), injected_at: definition.expected ? &#x27;2026-10-19T10:00:00.001Z&#x27; : null,
+    screenshot_path: definition.expected ? &#x27;artifacts/test/screenshot.png&#x27; : null,
+    trace_path: definition.expected ? &#x27;artifacts/test/trace.zip&#x27; : null,
+    notes: definition.kind === &#x27;source&#x27; ? &#x27;mutated_sha256 evidence&#x27; : &#x27;&#x27;,
+  }))
+}
+
+test(&#x27;campaign audit verifies observed diversity separately from expected labels&#x27;, () =&gt; {
+  const counts = validateCampaign(campaignRows(), EXPERIMENTS)
+  assert.equal(counts.PASS, 6); assert.equal(counts.FAIL, 9)
+  assert.equal(counts.LOCATOR_NOT_FOUND, 1); assert.equal(counts.LOCATOR_AMBIGUOUS, 1)
+  assert.equal(counts.ASSERTION_MISMATCH, 1); assert.equal(counts.STATE_CONSISTENCY_FAILURE, 3)
+  assert.equal(counts.ACTIONABILITY_FAILURE, 3)
+})
+
+for (const [name, change] of [
+  [&#x27;surviving mutation&#x27;, row =&gt; { row.status = &#x27;PASS&#x27; }],
+  [&#x27;wrong observed category&#x27;, row =&gt; { row.failure_type = &#x27;UNKNOWN&#x27; }],
+  [&#x27;unverified injection&#x27;, row =&gt; { row.injection_verified = false }],
+  [&#x27;setup failure&#x27;, row =&gt; { row.failure_phase = &#x27;setup&#x27; }],
+  [&#x27;missing artifact&#x27;, row =&gt; { row.trace_path = null }],
+  [&#x27;suppressed failure&#x27;, row =&gt; { row.expected_status = &#x27;FAIL&#x27; }],
+]) {
+  test(`campaign audit rejects ${name}`, () =&gt; {
+    const rows = campaignRows(); change(rows.find(row =&gt; row.emulated))
+    assert.throws(() =&gt; validateCampaign(rows, EXPERIMENTS))
+  })
+}
+
+test(&#x27;source mutation patterns accept Vite decimal and arrow-parameter normalization&#x27;, () =&gt; {
+  const served = original.replace(&#x27;SAVE10: 0.1&#x27;, &#x27;SAVE10: .1&#x27;).replace(&#x27;find(item =&gt;&#x27;, &#x27;find((item) =&gt;&#x27;)
+  for (const definition of EXPERIMENTS.filter(item =&gt; item.kind === &#x27;source&#x27;)) {
+    assert.notEqual(mutateSource(definition, served), served)
+  }
+})
+
+test(&#x27;inspection filters consume arguments once and exclude invalid campaigns&#x27;, t =&gt; {
+  const directory = temporary(t)
+  const store = new HistoryStore(directory)
+  const pass = upgradeRecord(legacyRecord())
+  const fail = { ...upgradeRecord(legacyRecord()), status: &#x27;FAIL&#x27;, failure_type: &#x27;UNKNOWN&#x27;, classification_source: &#x27;UNKNOWN&#x27; }
+  store.append(pass); store.append(fail)
+  fs.mkdirSync(path.join(directory, &#x27;campaigns&#x27;, &#x27;good&#x27;), { recursive: true })
+  fs.writeFileSync(path.join(directory, &#x27;campaigns&#x27;, &#x27;good&#x27;, &#x27;campaign.json&#x27;), JSON.stringify({ status: &#x27;VERIFIED&#x27;, attempt_ids: [pass.attempt_id] }))
+  fs.mkdirSync(path.join(directory, &#x27;campaigns&#x27;, &#x27;bad&#x27;), { recursive: true })
+  fs.writeFileSync(path.join(directory, &#x27;campaigns&#x27;, &#x27;bad&#x27;, &#x27;campaign.json&#x27;), JSON.stringify({ status: &#x27;INVALID&#x27;, attempt_ids: [fail.attempt_id] }))
+  const script = new URL(&#x27;./inspect.js&#x27;, import.meta.url)
+  for (const [args, expected] of [[[&#x27;--status&#x27;, &#x27;FAIL&#x27;], &#x27;FAIL&#x27;], [[&#x27;--verified-campaigns&#x27;], &#x27;PASS&#x27;]]) {
+    const result = spawnSync(process.execPath, [script.pathname, ...args], { encoding: &#x27;utf8&#x27;, env: { ...process.env, TELEMETRY_DIR: directory } })
+    assert.equal(result.status, 0, result.stderr)
+    const summary = JSON.parse(result.stdout)
+    assert.equal(summary.records, 1)
+    assert.equal(summary.status[expected], 1)
+  }
+})
+</code></pre>
+<h2 id="automation/healing/README.txt">automation/healing/README.txt</h2><pre><code>SPRINT 6 — ADAPTIVE SELF-HEALING
+
+Goal
+Controlled locator recovery with unchanged business assertions, audit evidence,
+and paired baseline evaluation. JavaScript only; no ML, dashboard, dependencies,
+application changes, assertion rewriting, or automatic source-code edits.
+
+Architecture
+  Page Object action + explicit locator descriptor + trusted healthy reference
+    -&gt; original Playwright action
+    -&gt; observed failure classifier
+    -&gt; only missing/ambiguous locators with reproducible match counts
+    -&gt; same-page candidate discovery
+    -&gt; ranking + hard identity gates + threshold + runner-up margin
+    -&gt; revalidate selected candidate
+    -&gt; at most ONE recovery action
+    -&gt; unchanged original assertion callback
+    -&gt; final Playwright outcome
+    -&gt; TelemetryReporter + healingReporter bridge
+    -&gt; journaled execution/healing JSON + CSV
+
+Existing 34 application tests keep their default behavior. Healing is opt-in via
+healing/fixtures.js and explicit Page Object options. This prevents silently
+turning regression failures into passes throughout the framework.
+
+Files
+  healingEngine.js       Original action, failure gating, recovery, original oracle
+  candidateDiscovery.js  Real Playwright locators and accessible element features
+  candidateRanking.js    Hard gates, explainable ranking, conservative selection
+  confidenceScore.js     Frozen deterministic heuristic policy, similarity signals
+  healingHistory.js      Event validation, summaries, joined history projection
+  healingReporter.js     Attachment bridge, final-test success enforcement
+  fixtures.js            Opt-in engine and eager per-operation audit attachment
+  healing.test.js        Unit/integration checks for safety, schema and storage
+  playwright.config.js   Paired baseline/adaptive evaluation projects
+  engine.playwright.config.js  Isolated browser checks without the SUT server
+  evaluation/registry.js Controlled cases and expected experimental outcomes
+  evaluation/evaluation.spec.js  Same healthy oracles in both project modes
+  evaluation/metrics.js  Independent outcome audit and measured evaluation metrics
+  evaluation/run.js      Durable evaluation manifest and outcome verification
+  tests/engine.spec.js   Five locator strategies and refusal/oracle browser checks
+                        (separate reports/healing-engine/telemetry dataset)
+
+How to use (from automation/)
+  npm run test:healing
+  npm run test:healing:browser
+  npm run telemetry:migrate
+  npm run healing:evaluate -- --repeat 2
+  npm run telemetry:validate
+  npm run healing:report
+
+Optional isolated dataset:
+  TELEMETRY_DIR=/absolute/path/to/dataset npm run healing:evaluate -- --repeat 2
+
+healing:evaluate defaults to two repetitions, supports 1..20, migrates legacy
+telemetry with backups, and returns zero ONLY when paired outcomes, injection
+confirmation, target identity, source versions, and artifacts verify correctly.
+Injected faults remain real failures in Playwright&#x27;s HTML report and telemetry.
+Running Playwright directly for these experiments intentionally returns nonzero.
+The wrapper independently audits expected outcomes; it never uses test.fail().
+Concurrent evaluations into the same dataset are unsupported: run one campaign
+at a time. Framework sources must remain unchanged throughout a campaign.
+
+Opt-in API example (a remembered target must exist before the locator changes):
+  import { test, expect } from &#x27;./healing/fixtures.js&#x27;
+  const reference = await healing.remember(app.cart.checkoutLink)
+  // In evaluation, inject a verified mutation here; in a session, reuse the
+  // trusted reference only for the same unchanged page URL.
+  await app.cart.openCheckout({
+    healing, reference,
+    validate: async () =&gt; {
+      await expect(app.checkout.heading).toBeVisible()
+      // Keep the rest of the original business assertions in this callback
+      // or in the test. A later final-test failure revokes healing success.
+    },
+  })
+
+CartPage.openCheckout and CheckoutPage.applyCoupon/submit accept these optional
+arguments. Without healing they run exactly the original action. Engine.perform
+also supports fill with a supplied value; values are never stored in audit data.
+Every healed action requires an explicit original-assertion callback. The engine
+cannot prove that a researcher supplied a sufficiently strong business oracle;
+that remains part of experiment and test review.
+
+Reference scope
+remember() waits for one visible healthy element, then captures role/name via
+Playwright ariaSnapshot, stable attributes, text/labels, and ancestor/heading
+context. A reference is scoped to the same page URL and test session. If no
+trusted reference exists when the locator breaks, refuse recovery. This sprint
+does not auto-learn references across app versions or deploy healed locators.
+A disappearing element can reflect a real application defect; observed locator
+symptoms and confidence alone never establish the root cause.
+
+Discovery
+Supports getByRole, getByLabel, getByText, getByTestId (data-testid), aria-label,
+and a deterministic lexical/synonym similarity heuristic. Discovery inspects
+visible same-role candidates, also requiring the original tag. All applicable
+semantic descriptors are logged in discoveredBy. Candidate nodes are deduplicated
+by their role-pool enumeration rather than counted repeatedly for each strategy.
+No XPath, nth()/first() recovery, forced action, synthetic DOM IDs, or DOM writes.
+Only the experiment injector mutates the page.
+
+Confidence and selection: semantic-v1
+  role match              0.20
+  accessible name match   0.25
+  text/label similarity   0.15
+  attribute similarity    0.25
+  DOM context similarity  0.15
+
+Unavailable attribute/context signals are excluded and remaining weights are
+renormalized. Empty text/name comparisons provide zero similarity. Scores are
+bounded [0,1], logged with each factor, and are NOT calibrated probabilities.
+The small frozen synonym dictionary (purchase/checkout, basket/cart, etc.) is
+explicitly heuristic semantic similarity; no embeddings, model or ML is involved.
+
+Hard gates: unique supported descriptor, matching role/tag, at least one stable
+attribute/test ID/label anchor, and no conflicting href, input name, or type.
+Threshold &gt;= 0.82; lead over any plausible competitor &gt;= 0.12. If either fails,
+refuse. Identical duplicated nodes remain in the candidate pool and force refusal.
+Distinct duplicate links can recover via unchanged href plus semantic locator.
+The selected features and uniqueness are rechecked immediately before action.
+One recovery action only, then the original oracle; never try another candidate
+after any action or assertion failure. This avoids repeated side effects.
+
+Budgets
+Original and recovery click/fill each use a 700 ms research action budget.
+Discovery inspects at most 80 same-role nodes with a cooperative 4 s time budget,
+checked between reads and before candidate selection/action. Feature reads and
+ARIA snapshots have bounded timeouts. Original assertion validation uses the
+existing Playwright test/expect deadlines. These are explicit experimental policy
+settings in confidenceScore.js, not production timing recommendations.
+
+Safety
+Heal only observed LOCATOR_NOT_FOUND or LOCATOR_AMBIGUOUS action failures, with
+current match counts confirming that symptom. Assertions execute outside the
+locator recovery catch. Arithmetic, coupon, inventory, state, runtime, setup,
+unknown, and actionability failures never receive business-oracle relaxation.
+The final test must PASS before healing_successful can remain true. Recovery
+that passes locally but has a later test failure is revoked by healingReporter.
+Independent controlled evaluation also checks the exact clicked target identity.
+It is never passed to the ranking engine, nor are injected expected labels.
+
+Telemetry v3
+Adds the requested fields:
+  healing_attempted, healing_successful, original_locator, candidate_locator,
+  candidate_count, confidence_score, healing_duration_ms, healing_reason.
+Also adds healing_mode (NONE/BASELINE/ADAPTIVE), original_failure_type, and
+healing_events (full per-operation signals, candidates, reference, timing, oracle).
+Summary locator/confidence/count/reason describe the last attempted healing
+operation (or last original operation if none); duration sums all recovery paths.
+A successful recovered test remains status=PASS and failure_type=null while its
+original locator failure is retained separately. This prevents confusing the
+initial failure with the final test outcome.
+
+The immutable v1 and v2 schemas remain readable. Migration to v3 backs up original
+JSON/CSV, preserves every old field and identity except schema_version, and adds
+NONE/false/empty defaults. Defaults mean healing was not recorded, not evidence
+that an old run used any particular healing policy. Existing experiment source
+versions and original observations remain unchanged. New writes require v3.
+
+Artifacts and durable storage
+  dataset/execution-history.json / test-history.csv  Canonical v3 test attempts
+  dataset/healing-history.json / healing-history.csv Per-operation joined dataset
+  dataset/healing-evaluations/&lt;id&gt;/evaluation.json    Audit manifest and metrics
+  dataset/healing-evaluations/latest.json             Latest VERIFIED evaluation
+  dataset/artifacts/&lt;run&gt;/&lt;attempt&gt;/                 Durable traces/screenshots
+
+The main HistoryStore publishes all four history outputs under the existing
+process lock and one write-ahead journal. A crash resumes the whole projection;
+there is no independent reporter racing a second dataset writer. Healing rows
+join by run_id, attempt_id and operation_id. Repeated publication is idempotent.
+Unexpected projection corruption is rejected; no silent repair/record deletion.
+Raw candidate/reference/error evidence remains in JSON and quoted CSV cells.
+Raw histories also retain INVALID evaluation rows. Select the attempt_ids from
+a VERIFIED evaluation manifest before calculating research metrics.
+Eager immutable attachment snapshots preserve intermediate evidence if later
+validation times out. The reporter consumes the last published snapshot.
+The final reporter reconciles successful events against the final test status.
+
+Intelligence integration
+Ordinary summaries now group by healingMode so recovered passes are not pooled
+with no-healing observations. Sprint 6 experimental rows have S6 experiment IDs
+and separate evaluation manifests; the existing Sprint 5 report intentionally
+excludes them from its verified Sprint 4 campaign cohort. Use the dedicated
+healing evaluation report for Sprint 6 metrics. Do not compare healed pass rates
+against ordinary no-healing reliability without examining original failures.
+
+Controlled evaluation (11 scenarios x 2 modes x repetitions)
+  Healthy checkout
+  Accessible-name rename: expected recovery
+  Identical duplicate: expected conservative refusal
+  Distinct duplicate with wrong href: expected recovery to the original target
+  Coupon percentage defect, stock defect, cart-clearing defect, total defect
+  Delayed rendering, hidden control, disabled control
+
+Each browser context starts fresh; faults are reversible browser/module-response
+mutations, never frontend source edits. Same original oracle in both modes.
+Both modes retain traces and screenshots, including successful recoveries.
+No registration, backend, app feature, dashboard or machine learning was added.
+
+Evaluation metrics and denominators
+  healing_success_rate = final-test verified recoveries / healing attempts
+    Includes safe refusals in the denominator; not just selected candidates.
+  wrong_recovery_rate = completed recovery actions on the wrong independent
+    clicked-element identity / completed recovery actions
+  masked_defect_rate = adaptive business-defect cases incorrectly passing the
+    original oracle / evaluated adaptive business-defect cases
+  healing_overhead.meanRecoveryPathMs = mean recovery duration among attempts,
+    including discovery, ranking, selected action, and original oracle validation
+  meanPairedOperationDeltaMs = mean adaptive minus baseline operation durations
+    matched by test ID/repetition; includes workflow continuation after recovery.
+
+Null rates mean no denominator. These are observed finite-sample results, not
+validated production accuracy or generalization claims. Four business defects
+cannot establish universal absence of masking. Fixed baseline-then-adaptive
+project order means timing deltas are descriptive, not causal performance proof.
+No learned policy update is performed; this sprint creates auditable evidence for
+later research. Check status=VERIFIED before using any evaluation in a paper.
+
+Primary API references
+https://playwright.dev/docs/locators
+https://playwright.dev/docs/api/class-locator#locator-aria-snapshot
+</code></pre>
+<h2 id="automation/healing/candidateDiscovery.js">automation/healing/candidateDiscovery.js</h2><pre><code>import { performance } from &#x27;node:perf_hooks&#x27;
+import { HEALING_POLICY, textSimilarity } from &#x27;./confidenceScore.js&#x27;
+
+const quoted = value =&gt; JSON.stringify(value)
+export function locatorFromDescriptor(page, descriptor) {
+  if (!descriptor || typeof descriptor.value !== &#x27;string&#x27;) throw new Error(&#x27;A serializable locator descriptor is required&#x27;)
+  const { strategy, value, role, attributes = {} } = descriptor
+  let locator
+  if (strategy === &#x27;role&#x27;) locator = page.getByRole(role, { name: value, exact: true, includeHidden: descriptor.includeHidden === true })
+  else if (strategy === &#x27;label&#x27;) locator = page.getByLabel(value, { exact: true })
+  else if (strategy === &#x27;text&#x27;) locator = page.getByText(value, { exact: true })
+  else if (strategy === &#x27;testId&#x27;) locator = page.getByTestId(value)
+  else if (strategy === &#x27;ariaLabel&#x27;) locator = page.locator(`[aria-label=${quoted(value)}]`)
+  else throw new Error(`Unsupported candidate strategy: ${strategy}`)
+  const allowed = [&#x27;href&#x27;, &#x27;type&#x27;, &#x27;name&#x27;, &#x27;id&#x27;]
+  for (const [key, val] of Object.entries(attributes)) {
+    if (!allowed.includes(key) || typeof val !== &#x27;string&#x27;) throw new Error(&#x27;Unsupported locator attribute&#x27;)
+    locator = locator.and(page.locator(`[${key}=${quoted(val)}]`))
+  }
+  return locator
+}
+
+export async function readFeatures(locator) {
+  const features = await locator.evaluate(element =&gt; {
+    const text = (element.textContent || &#x27;&#x27;).replace(/\s+/g, &#x27; &#x27;).trim().slice(0, 200)
+    const label = [...(element.labels || [])].map(item =&gt; item.textContent.trim()).join(&#x27; &#x27;).slice(0, 200)
+    const context = []
+    for (let parent = element.parentElement, depth = 0; parent &amp;&amp; depth &lt; 4; parent = parent.parentElement, depth++) {
+      const heading = [...parent.children].find(child =&gt; /^H[1-6]$/.test(child.tagName))
+      context.push([parent.tagName.toLowerCase(), parent.getAttribute(&#x27;role&#x27;) || &#x27;&#x27;, parent.getAttribute(&#x27;aria-label&#x27;) || &#x27;&#x27;, heading?.textContent || &#x27;&#x27;].join(&#x27; &#x27;))
+    }
+    return { tag: element.tagName.toLowerCase(), role: &#x27;&#x27;, name: &#x27;&#x27;, text, label,
+      testId: element.getAttribute(&#x27;data-testid&#x27;) || &#x27;&#x27;, ariaLabel: element.getAttribute(&#x27;aria-label&#x27;) || &#x27;&#x27;,
+      attributes: Object.fromEntries([&#x27;href&#x27;, &#x27;type&#x27;, &#x27;name&#x27;, &#x27;id&#x27;].map(key =&gt; [key, element.getAttribute(key) || &#x27;&#x27;])),
+      context: context.join(&#x27; &#x27;).replace(/\s+/g, &#x27; &#x27;).trim() }
+  }, undefined, { timeout: HEALING_POLICY.actionTimeoutMs })
+  // Ask Playwright for its accessible role/name, instead of reimplementing ARIA.
+  const snapshot = await locator.ariaSnapshot({ timeout: 700 })
+  const match = snapshot.match(/^- ([\w-]+)(?: (&quot;(?:\\.|[^&quot;\\])*&quot;))?/)
+  features.role = match?.[1] || &#x27;&#x27;
+  features.name = match?.[2] ? JSON.parse(match[2]) : features.ariaLabel || features.label || features.text
+  return features
+}
+
+export async function discoverCandidates(page, reference) {
+  // Discovery is read-only. No synthetic IDs, DOM writes, positional clicks, or force.
+  const deadline = performance.now() + HEALING_POLICY.discoveryTimeoutMs
+  const pool = page.getByRole(reference.role)
+  const count = await pool.count()
+  if (count &gt; HEALING_POLICY.maxCandidates) throw new Error(&#x27;Candidate budget exceeded; narrow the page context&#x27;)
+  const candidates = []
+  const nodes = await pool.all()
+  for (const node of nodes) {
+    if (performance.now() &gt; deadline) throw new Error(&#x27;Candidate discovery time budget exceeded&#x27;)
+    if (!await node.isVisible()) continue
+    const features = await readFeatures(node)
+    if (features.tag !== reference.tag || features.role !== reference.role) continue
+    const descriptors = [
+      { strategy: &#x27;role&#x27;, role: features.role, value: features.name },
+      ...(features.label ? [{ strategy: &#x27;label&#x27;, value: features.label }] : []),
+      ...(features.text ? [{ strategy: &#x27;text&#x27;, value: features.text }] : []),
+      ...(features.testId ? [{ strategy: &#x27;testId&#x27;, value: features.testId }] : []),
+      ...(features.ariaLabel ? [{ strategy: &#x27;ariaLabel&#x27;, value: features.ariaLabel }] : []),
+    ]
+    // Attribute-scoped semantic descriptors resolve distinguishable ambiguity.
+    const attributes = Object.fromEntries(Object.entries(features.attributes).filter(([, value]) =&gt; value))
+    if (Object.keys(attributes).length) descriptors.push({ strategy: &#x27;role&#x27;, role: features.role, value: features.name, attributes })
+    let descriptor = null
+    for (const option of descriptors) {
+      const candidate = locatorFromDescriptor(page, option)
+      if (await candidate.count() !== 1) continue
+      const handle = await node.elementHandle({ timeout: HEALING_POLICY.actionTimeoutMs })
+      try {
+        if (await candidate.evaluate((element, target) =&gt; element === target, handle, { timeout: HEALING_POLICY.actionTimeoutMs })) {
+          descriptor = option
+          break
+        }
+      } finally { await handle?.dispose() }
+    }
+    // Keep non-addressable duplicates in ranking: ambiguity must not disappear.
+    const semanticSimilarity = textSimilarity(reference.name, features.name)
+    candidates.push({ descriptor, features, discoveredBy: [...new Set([...descriptors.map(item =&gt; item.strategy), ...(semanticSimilarity &gt; 0 ? [&#x27;semanticSimilarity&#x27;] : [])])] })
+  }
+  return candidates
+}
+</code></pre>
+<h2 id="automation/healing/candidateRanking.js">automation/healing/candidateRanking.js</h2><pre><code>import { confidenceScore, HEALING_POLICY } from &#x27;./confidenceScore.js&#x27;
+
+export function rankCandidates(reference, candidates) {
+  return candidates.map(candidate =&gt; {
+    const { confidence, signals } = confidenceScore(reference, candidate.features)
+    // Do not follow a different route or act on a different form field merely
+    // because the text resembles the remembered target.
+    const conflict = [&#x27;href&#x27;, &#x27;type&#x27;, &#x27;name&#x27;].some(key =&gt; reference.attributes[key] &amp;&amp; candidate.features.attributes[key] !== reference.attributes[key])
+    const anchored = Object.entries(reference.attributes).some(([key, value]) =&gt; value &amp;&amp; candidate.features.attributes[key] === value) ||
+      Boolean(reference.testId &amp;&amp; reference.testId === candidate.features.testId) ||
+      Boolean(reference.label &amp;&amp; reference.label === candidate.features.label)
+    const eligible = Boolean(candidate.descriptor) &amp;&amp; !conflict &amp;&amp; anchored &amp;&amp; signals.role === 1
+    return { ...candidate, confidence, signals, eligible,
+      reason: !candidate.descriptor ? &#x27;NO_UNIQUE_LOCATOR&#x27; : conflict ? &#x27;CONTRACT_ATTRIBUTE_CONFLICT&#x27; : !anchored ? &#x27;NO_STABLE_ANCHOR&#x27; : &#x27;ELIGIBLE&#x27; }
+  }).sort((a, b) =&gt; b.confidence - a.confidence || JSON.stringify(a.descriptor).localeCompare(JSON.stringify(b.descriptor)))
+}
+
+export function selectCandidate(ranked) {
+  const eligible = ranked.filter(candidate =&gt; candidate.eligible)
+  const best = eligible[0]
+  if (!best) return { candidate: null, reason: &#x27;NO_SAFE_CANDIDATE&#x27; }
+  if (best.confidence &lt; HEALING_POLICY.threshold) return { candidate: null, reason: &#x27;LOW_CONFIDENCE&#x27; }
+  // Compare all plausible runners-up, including duplicates with no unique locator.
+  const competitor = ranked.filter(candidate =&gt; candidate !== best &amp;&amp; candidate.reason !== &#x27;CONTRACT_ATTRIBUTE_CONFLICT&#x27;)[0]
+  if (competitor &amp;&amp; best.confidence - competitor.confidence &lt; HEALING_POLICY.minimumMargin) return { candidate: null, reason: &#x27;INSUFFICIENT_MARGIN&#x27; }
+  return { candidate: best, reason: &#x27;CONFIDENT_UNIQUE_CANDIDATE&#x27; }
+}
+</code></pre>
+<h2 id="automation/healing/confidenceScore.js">automation/healing/confidenceScore.js</h2><pre><code>export const HEALING_POLICY = Object.freeze({
+  version: &#x27;semantic-v1&#x27;, threshold: 0.82, minimumMargin: 0.12,
+  maxCandidates: 80, discoveryTimeoutMs: 4_000, actionTimeoutMs: 700,
+  weights: Object.freeze({ role: 0.20, name: 0.25, text: 0.15, attributes: 0.25, context: 0.15 }),
+})
+
+const words = text =&gt; String(text || &#x27;&#x27;).toLowerCase().normalize(&#x27;NFKC&#x27;).replace(/[^\p{L}\p{N}\s]/gu, &#x27; &#x27;).split(/\s+/).filter(Boolean)
+const synonyms = Object.freeze({ purchase: &#x27;checkout&#x27;, buy: &#x27;checkout&#x27;, basket: &#x27;cart&#x27;, proceed: &#x27;continue&#x27;, submit: &#x27;place&#x27; })
+export function textSimilarity(left, right) {
+  const a = new Set(words(left).map(word =&gt; synonyms[word] || word))
+  const b = new Set(words(right).map(word =&gt; synonyms[word] || word))
+  if (!a.size || !b.size) return 0
+  return [...a].filter(word =&gt; b.has(word)).length / new Set([...a, ...b]).size
+}
+
+export function confidenceScore(reference, candidate) {
+  const keys = Object.keys(reference.attributes).filter(key =&gt; reference.attributes[key])
+  const signals = {
+    role: reference.role === candidate.role ? 1 : 0,
+    name: textSimilarity(reference.name, candidate.name),
+    text: textSimilarity(reference.text || reference.label, candidate.text || candidate.label),
+    attributes: keys.length ? keys.filter(key =&gt; reference.attributes[key] === candidate.attributes[key]).length / keys.length : null,
+    context: reference.context ? textSimilarity(reference.context, candidate.context) : null,
+  }
+  const available = Object.entries(signals).filter(([, value]) =&gt; value !== null)
+  const weight = available.reduce((sum, [key]) =&gt; sum + HEALING_POLICY.weights[key], 0)
+  const score = available.reduce((sum, [key, value]) =&gt; sum + HEALING_POLICY.weights[key] * value, 0) / weight
+  return { confidence: Number(score.toFixed(6)), signals }
+}
+</code></pre>
+<h2 id="automation/healing/engine.playwright.config.js">automation/healing/engine.playwright.config.js</h2><pre><code>import { defineConfig } from &#x27;@playwright/test&#x27;
+import { fileURLToPath } from &#x27;node:url&#x27;
+import base from &#x27;../playwright.config.js&#x27;
+export default defineConfig({
+  ...base, webServer: undefined,
+  testDir: fileURLToPath(new URL(&#x27;tests&#x27;, import.meta.url)),
+  workers: 1, retries: 0, timeout: 10_000,
+  outputDir: fileURLToPath(new URL(&#x27;../reports/healing-engine/results&#x27;, import.meta.url)),
+  reporter: [ [&#x27;list&#x27;], [fileURLToPath(new URL(&#x27;../telemetry/TelemetryReporter.js&#x27;, import.meta.url)), { directory: fileURLToPath(new URL(&#x27;../reports/healing-engine/telemetry&#x27;, import.meta.url)) }], [&#x27;html&#x27;, { outputFolder: fileURLToPath(new URL(&#x27;../reports/healing-engine/html&#x27;, import.meta.url)), open: &#x27;never&#x27; }] ],
+})
+</code></pre>
+<h2 id="automation/healing/evaluation/evaluation.spec.js">automation/healing/evaluation/evaluation.spec.js</h2><pre><code>import { test, expect } from &#x27;../fixtures.js&#x27;
+import { FaultController, assertStateInvariant } from &#x27;../../experiments/injector.js&#x27;
+import { experimentById } from &#x27;../../experiments/registry.js&#x27;
+import { EVALUATION_CASES } from &#x27;./registry.js&#x27;
+import { enterDemo } from &#x27;../../utils/flows.js&#x27;
+import { customer } from &#x27;../../utils/testData.js&#x27;
+import { formatPrice } from &#x27;../../utils/values.js&#x27;
+
+for (const scenario of EVALUATION_CASES) {
+  test(`${scenario.testId} ${scenario.id}`, async ({ app, page, healing }, testInfo) =&gt; {
+    const original = experimentById(scenario.mutation)
+    const definition = { ...original, id: `S6-${scenario.id}-v1`, variant: `${scenario.id}.v1`, version: &#x27;1.0.0&#x27; }
+    const fault = new FaultController(page, testInfo, definition)
+    testInfo.annotations.push({ type: &#x27;evaluation_scenario&#x27;, description: scenario.id })
+    await fault.install()
+    await enterDemo(app)
+    await app.products.addToCart(&#x27;Laptop&#x27;)
+    await app.products.openCart()
+    const navigation = scenario.family === &#x27;locator&#x27; || scenario.family === &#x27;healthy&#x27;
+    if (!navigation) await app.cart.openCheckout()
+    if (!navigation &amp;&amp; original.scenario !== &#x27;coupon-save10&#x27;) await app.checkout.fillCustomer(customer)
+    if (original.scenario === &#x27;coupon-save10&#x27;) await app.checkout.couponInput.fill(&#x27;SAVE10&#x27;)
+    const target = navigation ? app.cart.checkoutLink : original.scenario === &#x27;coupon-save10&#x27; ? app.checkout.applyCouponButton : app.checkout.placeOrderButton
+    const reference = await healing.remember(target)
+    // Independent target identity for evaluation only. The engine never reads
+    // this marker, the scenario ID, or expected failure/recovery labels.
+    await target.evaluate(element =&gt; {
+      window.__healingTargetClicked = false
+      element.addEventListener(&#x27;click&#x27;, () =&gt; { window.__healingTargetClicked = true }, { once: true })
+    })
+    if (original.kind === &#x27;dom&#x27;) {
+      await fault.applyDOM(target)
+      if (scenario.id === &#x27;distinct-duplicate&#x27;) {
+        await page.getByRole(&#x27;link&#x27;, { name: &#x27;Proceed to checkout&#x27;, exact: true }).evaluateAll(elements =&gt; elements[1].setAttribute(&#x27;href&#x27;, &#x27;/products&#x27;))
+      }
+      if (scenario.family === &#x27;locator&#x27;) {
+        await expect(app.cart.checkoutLink).toHaveCount(scenario.id === &#x27;rename&#x27; ? 0 : 2)
+        if (scenario.id === &#x27;distinct-duplicate&#x27;) await expect(page.locator(&#x27;a[href=&quot;/products&quot;]&#x27;).filter({ hasText: &#x27;Proceed to checkout&#x27; })).toHaveCount(1)
+      } else if (definition.operation === &#x27;disable&#x27;) await expect(target).toBeDisabled()
+      else await expect(target).toBeHidden()
+      await fault.confirm(&#x27;Independent pre-action DOM observation confirms the configured mutation.&#x27;)
+    }
+    try {
+      const validate = async () =&gt; {
+        if (navigation) {
+          await expect(app.checkout.heading).toBeVisible()
+          await app.checkout.fillCustomer(customer)
+          await app.checkout.submit()
+        } else if (original.scenario === &#x27;coupon-save10&#x27;) {
+          await expect(app.checkout.discount).toHaveText(formatPrice(2500))
+          await fault.confirm(&#x27;Served module produces 5% rather than the original 10% coupon rate.&#x27;)
+          await expect(app.checkout.discount).toHaveText(formatPrice(5000))
+          return
+        }
+        await expect(app.checkout.successMessage).toBeVisible()
+        if (scenario.family === &#x27;business&#x27;) {
+          if (original.scenario === &#x27;stock-after-order&#x27;) {
+            await app.checkout.continueShopping()
+            await expect(app.products.product(&#x27;Laptop&#x27;).getByText(&#x27;In stock: 5&#x27;, { exact: true })).toBeVisible()
+            await fault.confirm(&#x27;Order placed but stock remains 5.&#x27;)
+            await assertStateInvariant(fault, () =&gt; expect(app.products.product(&#x27;Laptop&#x27;).getByText(&#x27;In stock: 4&#x27;, { exact: true })).toBeVisible())
+          } else if (original.scenario === &#x27;cart-after-order&#x27;) {
+            await expect(app.products.cartLink).toHaveText(&#x27;Cart (1)&#x27;)
+            await fault.confirm(&#x27;Order placed but cart remains populated.&#x27;)
+            await assertStateInvariant(fault, () =&gt; expect(app.products.cartLink).toHaveText(&#x27;Cart (0)&#x27;))
+          } else {
+            await expect(app.checkout.confirmationTotal).toHaveText(`Total: ${formatPrice(51000)}`)
+            await fault.confirm(&#x27;Persisted total is 51000 rather than the line total of 50000.&#x27;)
+            await assertStateInvariant(fault, () =&gt; expect(app.checkout.confirmationTotal).toHaveText(`Total: ${formatPrice(50000)}`))
+          }
+          return
+        }
+        // Unchanged healthy business oracle used by both modes, also after recovery.
+        await expect(app.checkout.confirmationItems).toHaveText([`Laptop × 1 — ${formatPrice(50000)}`])
+        await expect(app.checkout.confirmationTotal).toHaveText(`Total: ${formatPrice(50000)}`)
+        await expect(app.products.cartLink).toHaveText(&#x27;Cart (0)&#x27;)
+        const order = await app.checkout.readOrderNumber()
+        await app.orders.open()
+        await expect(app.orders.orders).toHaveCount(1)
+        await expect(app.orders.total(order)).toHaveText(`Total: ${formatPrice(50000)}`)
+        await app.products.open()
+        await expect(app.products.product(&#x27;Laptop&#x27;).getByText(&#x27;In stock: 4&#x27;, { exact: true })).toBeVisible()
+      }
+      if (navigation) await app.cart.openCheckout({ healing, reference, validate })
+      else if (original.scenario === &#x27;coupon-save10&#x27;) await app.checkout.applyCoupon(&#x27;SAVE10&#x27;, { healing, reference, validate })
+      else await app.checkout.submit({ healing, reference, validate })
+    } finally {
+      const truth = { scenario: scenario.id, family: scenario.family,
+        intendedTargetClicked: await page.evaluate(() =&gt; window.__healingTargetClicked === true) }
+      testInfo.annotations.push({ type: &#x27;telemetry_note&#x27;, description: JSON.stringify({ healing_ground_truth: truth }) })
+      await testInfo.attach(&#x27;healing-ground-truth&#x27;, { body: Buffer.from(JSON.stringify(truth)), contentType: &#x27;application/json&#x27; })
+    }
+  })
+}
+</code></pre>
+<h2 id="automation/healing/evaluation/metrics.js">automation/healing/evaluation/metrics.js</h2><pre><code>import assert from &#x27;node:assert/strict&#x27;
+import { EVALUATION_CASES } from &#x27;./registry.js&#x27;
+
+export function groundTruth(row) {
+  for (const line of row.notes.split(&#x27;\n&#x27;)) {
+    try { const value = JSON.parse(line); if (value.healing_ground_truth) return value.healing_ground_truth }
+    catch { /* Other notes are ordinary human-readable evidence. */ }
+  }
+  throw new Error(`Missing independent ground truth: ${row.attempt_id}`)
+}
+
+export function validateEvaluation(rows, repetitions) {
+  assert.equal(rows.length, EVALUATION_CASES.length * 2 * repetitions, &#x27;Incomplete evaluation&#x27;)
+  for (const scenario of EVALUATION_CASES) for (const mode of [&#x27;BASELINE&#x27;, &#x27;ADAPTIVE&#x27;]) {
+    const selected = rows.filter(row =&gt; row.test_id === scenario.testId &amp;&amp; row.healing_mode === mode)
+    assert.equal(selected.length, repetitions, `${scenario.id}/${mode}: missing pair/repetition`)
+    assert.deepEqual(selected.map(row =&gt; row.repeat_index).sort((a, b) =&gt; a - b), Array.from({ length: repetitions }, (_, index) =&gt; index))
+    for (const row of selected) {
+      const truth = groundTruth(row)
+      assert.equal(truth.scenario, scenario.id)
+      assert.equal(truth.family, scenario.family)
+      assert.equal(typeof truth.intendedTargetClicked, &#x27;boolean&#x27;)
+      assert.equal(row.record_type, &#x27;TEST_ATTEMPT&#x27;)
+      assert.equal(row.retry_count, 0)
+      assert.equal(row.expected_status, &#x27;PASS&#x27;, &#x27;Do not suppress failures with test.fail&#x27;)
+      assert.equal(row.healing_events.length, 1)
+      assert.equal(row.healing_successful, mode === &#x27;ADAPTIVE&#x27; &amp;&amp; scenario.expectedRecovery)
+      assert.equal(row.status, scenario.family === &#x27;healthy&#x27; || mode === &#x27;ADAPTIVE&#x27; &amp;&amp; scenario.expectedRecovery ? &#x27;PASS&#x27; : &#x27;FAIL&#x27;, `${scenario.id}/${mode}: unexpected oracle outcome`)
+      if (scenario.family !== &#x27;healthy&#x27;) assert.equal(row.injection_verified, true)
+      if (scenario.family === &#x27;business&#x27; || scenario.family === &#x27;actionability&#x27; || mode === &#x27;BASELINE&#x27;) assert.equal(row.healing_attempted, false)
+      if (row.status === &#x27;PASS&#x27;) assert.equal(truth.intendedTargetClicked, true, &#x27;Independent identity oracle detected a wrong target&#x27;)
+      assert.ok(row.trace_path &amp;&amp; row.screenshot_path, &#x27;Evaluation evidence missing&#x27;)
+    }
+  }
+  assert.equal(new Set(rows.map(row =&gt; row.run_id)).size, 1)
+}
+
+export function evaluationMetrics(rows) {
+  const adaptive = rows.filter(row =&gt; row.healing_mode === &#x27;ADAPTIVE&#x27;)
+  const attempted = adaptive.filter(row =&gt; row.healing_attempted)
+  const recovered = attempted.filter(row =&gt; row.healing_successful)
+  const actions = attempted.filter(row =&gt; row.healing_events.some(event =&gt; event.candidate_locator &amp;&amp; event.action_completed))
+  const wrong = actions.filter(row =&gt; !groundTruth(row).intendedTargetClicked)
+  const business = adaptive.filter(row =&gt; groundTruth(row).family === &#x27;business&#x27;)
+  const masked = business.filter(row =&gt; row.status === &#x27;PASS&#x27;)
+  const mean = values =&gt; values.length ? values.reduce((sum, value) =&gt; sum + value, 0) / values.length : null
+  const ratio = (a, b) =&gt; b ? a / b : null
+  const pairs = adaptive.map(row =&gt; {
+    const baseline = rows.find(other =&gt; other.test_id === row.test_id &amp;&amp; other.repeat_index === row.repeat_index &amp;&amp; other.healing_mode === &#x27;BASELINE&#x27;)
+    return baseline ? { testId: row.test_id, repeatIndex: row.repeat_index, adaptiveStatus: row.status, baselineStatus: baseline.status,
+      durationDeltaMs: row.healing_events[0].total_duration_ms - baseline.healing_events[0].total_duration_ms } : null
+  }).filter(Boolean)
+  return {
+    healing_success_rate: ratio(recovered.length, attempted.length),
+    healing_success_numerator: recovered.length, healing_attempts: attempted.length,
+    wrong_recovery_rate: ratio(wrong.length, actions.length), wrong_recoveries: wrong.length, recovery_actions: actions.length,
+    masked_defect_rate: ratio(masked.length, business.length), masked_defects: masked.length, evaluated_business_defects: business.length,
+    healing_overhead: { meanRecoveryPathMs: mean(attempted.map(row =&gt; row.healing_duration_ms)),
+      totalRecoveryPathMs: attempted.reduce((sum, row) =&gt; sum + row.healing_duration_ms, 0),
+      meanPairedOperationDeltaMs: mean(pairs.map(pair =&gt; pair.durationDeltaMs)) },
+    modes: Object.fromEntries([&#x27;BASELINE&#x27;, &#x27;ADAPTIVE&#x27;].map(mode =&gt; {
+      const selected = rows.filter(row =&gt; row.healing_mode === mode)
+      return [mode, { executions: selected.length, passed: selected.filter(row =&gt; row.status === &#x27;PASS&#x27;).length, failed: selected.filter(row =&gt; row.status === &#x27;FAIL&#x27;).length }]
+    })), pairs,
+    limitations: [
+      &#x27;Controlled same-session experiment; rates are conditional on these scenarios, not production accuracy estimates.&#x27;,
+      &#x27;Wrong recovery is measured by an independent clicked-element identity oracle, not confidence score or final status alone.&#x27;,
+      &#x27;Masked defect rate covers only the four injected business defects and the retained original assertions.&#x27;,
+      &#x27;Recovery path time includes discovery, ranking, action, and original assertion validation; paired deltas also include successful workflow continuation.&#x27;,
+      &#x27;Fixed BASELINE-then-ADAPTIVE order; timings are descriptive and not a causal performance comparison.&#x27;,
+    ],
+  }
+}
+</code></pre>
+<h2 id="automation/healing/evaluation/registry.js">automation/healing/evaluation/registry.js</h2><pre><code>import { EXPERIMENTS } from &#x27;../../experiments/registry.js&#x27;
+
+export const EVALUATION_CASES = Object.freeze([
+  { id: &#x27;healthy&#x27;, mutation: &#x27;S4-BASE-001-v1&#x27;, family: &#x27;healthy&#x27;, expectedRecovery: false },
+  { id: &#x27;rename&#x27;, mutation: &#x27;S4-LOC-001-v1&#x27;, family: &#x27;locator&#x27;, expectedRecovery: true },
+  { id: &#x27;identical-duplicate&#x27;, mutation: &#x27;S4-LOC-002-v1&#x27;, family: &#x27;locator&#x27;, expectedRecovery: false },
+  { id: &#x27;distinct-duplicate&#x27;, mutation: &#x27;S4-LOC-002-v1&#x27;, family: &#x27;locator&#x27;, expectedRecovery: true },
+  ...EXPERIMENTS.filter(item =&gt; item.kind === &#x27;source&#x27;).map(item =&gt; ({ id: item.id, mutation: item.id, family: &#x27;business&#x27;, expectedRecovery: false })),
+  ...EXPERIMENTS.filter(item =&gt; item.scenario === &#x27;checkout-action&#x27; &amp;&amp; item.kind !== &#x27;none&#x27;).map(item =&gt; ({ id: item.id, mutation: item.id, family: &#x27;actionability&#x27;, expectedRecovery: false })),
+].map((item, index) =&gt; Object.freeze({ ...item, testId: `HEAL-${String(index + 1).padStart(3, &#x27;0&#x27;)}` })))
+</code></pre>
+<h2 id="automation/healing/evaluation/run.js">automation/healing/evaluation/run.js</h2><pre><code>import fs from &#x27;node:fs&#x27;
+import path from &#x27;node:path&#x27;
+import { randomUUID } from &#x27;node:crypto&#x27;
+import { spawn } from &#x27;node:child_process&#x27;
+import { HistoryStore, atomicWrite } from &#x27;../../telemetry/history.js&#x27;
+import { AUTOMATION_ROOT, PROJECT_ROOT, createRunMetadata } from &#x27;../../telemetry/metadata.js&#x27;
+import { EVALUATION_CASES } from &#x27;./registry.js&#x27;
+import { validateEvaluation, evaluationMetrics } from &#x27;./metrics.js&#x27;
+
+let manifest
+let file
+try {
+  const args = process.argv.slice(2)
+  if (args.length &amp;&amp; (args.length !== 2 || args[0] !== &#x27;--repeat&#x27;)) throw new Error(&#x27;Usage: npm run healing:evaluate -- [--repeat 1..20]&#x27;)
+  const repetitions = args.length ? Number(args[1]) : 2
+  if (!Number.isInteger(repetitions) || repetitions &lt; 1 || repetitions &gt; 20) throw new Error(&#x27;Invalid repetitions&#x27;)
+  const directory = path.resolve(process.env.TELEMETRY_DIR || path.join(PROJECT_ROOT, &#x27;dataset&#x27;))
+  const store = new HistoryStore(directory)
+  const migration = store.migrate()
+  if (migration.migrated) console.log(`Migrated ${migration.migrated} rows; originals backed up at ${migration.backup}`)
+  const before = new Set(store.validate().map(row =&gt; row.attempt_id))
+  const source = createRunMetadata({ workers: 1 })
+  const id = randomUUID()
+  file = path.join(directory, &#x27;healing-evaluations&#x27;, id, &#x27;evaluation.json&#x27;)
+  manifest = { evaluation_id: id, status: &#x27;RUNNING&#x27;, started_at: new Date().toISOString(), repetitions,
+    expected_rows: EVALUATION_CASES.length * 2 * repetitions, app_version: source.app_version, test_version: source.test_version }
+  atomicWrite(file, JSON.stringify(manifest, null, 2) + &#x27;\n&#x27;)
+  console.log(&#x27;Expected faults remain real Playwright failures. The evaluation command verifies paired outcomes separately.&#x27;)
+  const child = spawn(process.execPath, [path.join(AUTOMATION_ROOT, &#x27;node_modules/@playwright/test/cli.js&#x27;),
+    &#x27;test&#x27;, &#x27;--config&#x27;, &#x27;healing/playwright.config.js&#x27;, `--repeat-each=${repetitions}`],
+    { cwd: AUTOMATION_ROOT, stdio: &#x27;inherit&#x27;, env: { ...process.env, TELEMETRY_DIR: directory } })
+  const exit = await new Promise((resolve, reject) =&gt; {
+    child.once(&#x27;error&#x27;, reject)
+    child.once(&#x27;exit&#x27;, (code, signal) =&gt; resolve({ code, signal }))
+  })
+  const rows = store.validate().filter(row =&gt; !before.has(row.attempt_id))
+  manifest.attempt_ids = rows.map(row =&gt; row.attempt_id)
+  manifest.run_ids = [...new Set(rows.map(row =&gt; row.run_id))]
+  manifest.playwright_exit_code = exit.code
+  validateEvaluation(rows, repetitions)
+  const after = createRunMetadata({ workers: 1 })
+  if (source.app_version !== after.app_version || source.test_version !== after.test_version) throw new Error(&#x27;Sources changed during evaluation&#x27;)
+  if (exit.signal || exit.code !== 1) throw new Error(&#x27;Unexpected Playwright termination&#x27;)
+  const metrics = evaluationMetrics(rows)
+  Object.assign(manifest, { status: &#x27;VERIFIED&#x27;, completed_at: new Date().toISOString(), metrics })
+  atomicWrite(file, JSON.stringify(manifest, null, 2) + &#x27;\n&#x27;)
+  atomicWrite(path.join(directory, &#x27;healing-evaluations/latest.json&#x27;), JSON.stringify(manifest, null, 2) + &#x27;\n&#x27;)
+  console.log(`Healing evaluation VERIFIED\n${file}\n${JSON.stringify(metrics, null, 2)}`)
+} catch (error) {
+  if (manifest &amp;&amp; file) {
+    Object.assign(manifest, { status: &#x27;INVALID&#x27;, completed_at: new Date().toISOString(), error: error.message })
+    atomicWrite(file, JSON.stringify(manifest, null, 2) + &#x27;\n&#x27;)
+  }
+  console.error(`Healing evaluation failed: ${error.message}`)
+  process.exitCode = 1
+}
+</code></pre>
+<h2 id="automation/healing/fixtures.js">automation/healing/fixtures.js</h2><pre><code>import { test as base, expect } from &#x27;../fixtures/test.js&#x27;
+import { HealingEngine } from &#x27;./healingEngine.js&#x27;
+
+export const test = base.extend({
+  healingMode: [&#x27;ADAPTIVE&#x27;, { option: true }],
+  healing: async ({ page, healingMode }, use, testInfo) =&gt; {
+    const events = []
+    const engine = new HealingEngine(page, { mode: healingMode, record: async event =&gt; {
+      const index = events.findIndex(item =&gt; item.operation_id === event.operation_id)
+      if (index === -1) events.push(event)
+      else events[index] = event
+      // Attach eagerly so a later assertion/timeout cannot erase the recovery evidence.
+      const body = Buffer.from(JSON.stringify({ mode: healingMode, events }))
+      // Playwright emits an attachment when attach() is called. Mutating an
+      // earlier attachment body does not publish a new reporter snapshot.
+      await testInfo.attach(&#x27;healing-events&#x27;, { body, contentType: &#x27;application/json&#x27; })
+    } })
+    await use(engine)
+  },
+})
+export { expect }
+</code></pre>
+<h2 id="automation/healing/healing.test.js">automation/healing/healing.test.js</h2><pre><code>import test from &#x27;node:test&#x27;
+import assert from &#x27;node:assert/strict&#x27;
+import fs from &#x27;node:fs&#x27;
+import os from &#x27;node:os&#x27;
+import path from &#x27;node:path&#x27;
+import { randomUUID } from &#x27;node:crypto&#x27;
+import { confidenceScore, textSimilarity } from &#x27;./confidenceScore.js&#x27;
+import { rankCandidates, selectCandidate } from &#x27;./candidateRanking.js&#x27;
+import { locatorFromDescriptor } from &#x27;./candidateDiscovery.js&#x27;
+import { HealingEngine } from &#x27;./healingEngine.js&#x27;
+import { HEALING_DEFAULTS, summarizeHealing, validateHealingEvent, healingRows, serializeHealingCSV } from &#x27;./healingHistory.js&#x27;
+import { readHealingResult } from &#x27;./healingReporter.js&#x27;
+import { createRunMetadata, experimentMetadata } from &#x27;../telemetry/metadata.js&#x27;
+import { V2_SCHEMA, validateRecord } from &#x27;../telemetry/schema.js&#x27;
+import { HistoryStore, atomicWrite, serializeCSV } from &#x27;../telemetry/history.js&#x27;
+import { buildIntelligenceReport } from &#x27;../intelligence/intelligenceReport.js&#x27;
+
+const reference = { tag: &#x27;a&#x27;, role: &#x27;link&#x27;, name: &#x27;Proceed to checkout&#x27;, text: &#x27;Proceed to checkout&#x27;, label: &#x27;&#x27;,
+  testId: &#x27;&#x27;, ariaLabel: &#x27;&#x27;, attributes: { href: &#x27;/checkout&#x27;, id: &#x27;&#x27;, type: &#x27;&#x27;, name: &#x27;&#x27; }, context: &#x27;section Your cart&#x27;, pageURL: &#x27;http://localhost/cart&#x27; }
+const candidate = changes =&gt; ({ descriptor: { strategy: &#x27;role&#x27;, role: &#x27;link&#x27;, value: &#x27;Proceed to purchase&#x27; },
+  features: { ...reference, ...changes }, discoveredBy: [&#x27;role&#x27;, &#x27;semanticSimilarity&#x27;] })
+function event(changes = {}) {
+  return { operation_id: randomUUID(), healing_mode: &#x27;ADAPTIVE&#x27;, healing_attempted: true, healing_successful: true,
+    original_locator: &#x27;{&quot;strategy&quot;:&quot;role&quot;,&quot;role&quot;:&quot;link&quot;,&quot;value&quot;:&quot;Proceed to checkout&quot;}&#x27;,
+    candidate_locator: &#x27;{&quot;strategy&quot;:&quot;role&quot;,&quot;role&quot;:&quot;link&quot;,&quot;value&quot;:&quot;Proceed to purchase&quot;}&#x27;,
+    candidate_count: 1, confidence_score: 1, healing_duration_ms: 5, healing_reason: &#x27;RECOVERED_AND_ORIGINAL_ASSERTIONS_PASSED&#x27;,
+    original_failure_type: &#x27;LOCATOR_NOT_FOUND&#x27;, original_error: &#x27;locator.click: no element matches&#x27;,
+    original_assertions_passed: true, action_completed: true, action_duration_ms: 2, total_duration_ms: 7,
+    reference, candidates: rankCandidates(reference, [candidate({ name: &#x27;Proceed to purchase&#x27; })]), policy_version: &#x27;semantic-v1&#x27;, ...changes }
+}
+const metadata = createRunMetadata({ workers: 1 })
+function record(changes = {}) {
+  return { schema_version: 3, record_type: &#x27;TEST_ATTEMPT&#x27;, ...metadata,
+    run_id: randomUUID(), attempt_id: randomUUID(), test_id: &#x27;TEST-001&#x27;, test_name: &#x27;Checkout&#x27;, suite_name: &#x27;Checkout&#x27;,
+    browser: &#x27;chromium&#x27;, project_name: &#x27;chromium&#x27;, status: &#x27;PASS&#x27;, failure_type: null, duration_ms: 100,
+    retry_count: 0, start_time: &#x27;2026-10-19T10:00:00.000Z&#x27;, end_time: &#x27;2026-10-19T10:00:00.100Z&#x27;,
+    trace_path: null, screenshot_path: null, notes: &#x27;&#x27;, ...experimentMetadata(), expected_status: &#x27;PASS&#x27;,
+    classification_source: &#x27;NONE&#x27;, failure_phase: &#x27;test&#x27;, error_message: &#x27;&#x27;, error_stack: &#x27;&#x27;, runtime_errors: [],
+    worker_index: 0, repeat_index: 0, ...HEALING_DEFAULTS, healing_events: [], ...changes }
+}
+function temporary(t) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), &#x27;sut-healing-&#x27;))
+  t.after(() =&gt; fs.rmSync(directory, { recursive: true, force: true }))
+  return directory
+}
+function fakeEngine({ mode = &#x27;ADAPTIVE&#x27;, error } = {}) {
+  const events = []
+  let actions = 0
+  const locator = { count: async () =&gt; error?.message.includes(&#x27;strict mode&#x27;) ? 2 : error?.message.includes(&#x27;no element matches&#x27;) ? 0 : 1, click: async () =&gt; { actions++; if (error) throw error }, fill: async () =&gt; { actions++; if (error) throw error } }
+  const page = { getByRole: () =&gt; locator, url: () =&gt; &#x27;http://localhost/cart&#x27; }
+  return { engine: new HealingEngine(page, { mode, record: async e =&gt; events.push(e) }), events, actions: () =&gt; actions }
+}
+const descriptor = { strategy: &#x27;role&#x27;, role: &#x27;link&#x27;, value: &#x27;Proceed to checkout&#x27; }
+
+test(&#x27;semantic similarity is a bounded deterministic lexical/synonym heuristic&#x27;, () =&gt; {
+  assert.equal(textSimilarity(&#x27;Proceed to checkout&#x27;, &#x27;Proceed to purchase&#x27;), 1)
+  assert.equal(textSimilarity(&#x27;Checkout&#x27;, &#x27;Cancel&#x27;), 0)
+  assert.equal(textSimilarity(&#x27;&#x27;, &#x27;&#x27;), 0)
+  assert.ok(confidenceScore(reference, candidate({ name: &#x27;Proceed to purchase&#x27; }).features).confidence &gt; 0.82)
+})
+
+test(&#x27;contract attributes reject a text-perfect link to the wrong destination&#x27;, () =&gt; {
+  const ranked = rankCandidates(reference, [candidate({ attributes: { ...reference.attributes, href: &#x27;/products&#x27; } }), candidate({ name: &#x27;Proceed to purchase&#x27; })])
+  assert.equal(ranked.find(item =&gt; item.features.attributes.href === &#x27;/products&#x27;).eligible, false)
+  assert.equal(selectCandidate(ranked).candidate.features.attributes.href, &#x27;/checkout&#x27;)
+})
+
+test(&#x27;identical unaddressable duplicates are refused rather than clicked by position&#x27;, () =&gt; {
+  const ranked = rankCandidates(reference, [{ ...candidate({}), descriptor: null }, { ...candidate({}), descriptor: null }])
+  assert.equal(selectCandidate(ranked).reason, &#x27;NO_SAFE_CANDIDATE&#x27;)
+})
+
+test(&#x27;an ambiguous runner-up blocks a confident candidate&#x27;, () =&gt; {
+  const ranked = rankCandidates(reference, [candidate({}), { ...candidate({}), descriptor: null }])
+  assert.equal(selectCandidate(ranked).reason, &#x27;INSUFFICIENT_MARGIN&#x27;)
+})
+
+test(&#x27;low confidence and absence of a stable identity anchor cause refusal&#x27;, () =&gt; {
+  const low = candidate({ name: &#x27;Cancel&#x27;, text: &#x27;Cancel&#x27;, context: &#x27;unrelated&#x27; })
+  assert.equal(selectCandidate(rankCandidates(reference, [low])).reason, &#x27;LOW_CONFIDENCE&#x27;)
+  const unanchored = { ...reference, attributes: { href: &#x27;&#x27;, id: &#x27;&#x27;, name: &#x27;&#x27;, type: &#x27;&#x27; } }
+  assert.equal(rankCandidates(unanchored, [candidate({ attributes: unanchored.attributes })])[0].reason, &#x27;NO_STABLE_ANCHOR&#x27;)
+})
+
+test(&#x27;all five locator strategies construct supported Playwright locators&#x27;, () =&gt; {
+  const calls = []
+  const locator = { and: other =&gt; { calls.push([&#x27;and&#x27;, other]); return locator } }
+  const page = Object.fromEntries([&#x27;getByRole&#x27;, &#x27;getByLabel&#x27;, &#x27;getByText&#x27;, &#x27;getByTestId&#x27;, &#x27;locator&#x27;].map(name =&gt; [name, (...args) =&gt; { calls.push([name, ...args]); return locator }]))
+  for (const option of [descriptor, { strategy: &#x27;label&#x27;, value: &#x27;Name&#x27; }, { strategy: &#x27;text&#x27;, value: &#x27;Continue&#x27; },
+    { strategy: &#x27;testId&#x27;, value: &#x27;checkout&#x27; }, { strategy: &#x27;ariaLabel&#x27;, value: &#x27;Checkout&#x27; }]) assert.equal(locatorFromDescriptor(page, option), locator)
+  assert.deepEqual(calls.map(call =&gt; call[0]), [&#x27;getByRole&#x27;, &#x27;getByLabel&#x27;, &#x27;getByText&#x27;, &#x27;getByTestId&#x27;, &#x27;locator&#x27;])
+  assert.throws(() =&gt; locatorFromDescriptor(page, { strategy: &#x27;xpath&#x27;, value: &#x27;//button&#x27; }))
+  assert.throws(() =&gt; locatorFromDescriptor(page, { ...descriptor, attributes: { onclick: &#x27;bad&#x27; } }))
+})
+
+test(&#x27;business assertion failure is rethrown unchanged with no recovery attempt&#x27;, async () =&gt; {
+  const { engine, events, actions } = fakeEngine()
+  const defect = new Error(&#x27;Expected 50000 but received 51000&#x27;)
+  let validations = 0
+  await assert.rejects(engine.perform({ descriptor, validate: async () =&gt; { validations++; throw defect } }), error =&gt; error === defect)
+  assert.equal(validations, 1)
+  assert.equal(actions(), 1)
+  assert.equal(events[0].healing_attempted, false)
+  assert.equal(events[0].healing_successful, false)
+  assert.equal(events[0].healing_reason, &#x27;ORIGINAL_ASSERTION_FAILED&#x27;)
+  validateHealingEvent(events[0])
+})
+
+test(&#x27;healthy action validates the original oracle once without claiming healing&#x27;, async () =&gt; {
+  const { engine, events } = fakeEngine()
+  let validations = 0
+  await engine.perform({ descriptor, validate: async () =&gt; { validations++ } })
+  assert.equal(validations, 1)
+  assert.equal(events[0].original_assertions_passed, true)
+  assert.equal(events[0].healing_successful, false)
+})
+
+test(&#x27;actionability errors never trigger discovery or another action&#x27;, async () =&gt; {
+  const error = new Error(&#x27;locator.click: element is not enabled&#x27;)
+  const { engine, events, actions } = fakeEngine({ error })
+  await assert.rejects(engine.perform({ descriptor, validate: async () =&gt; assert.fail(&#x27;Oracle must not run&#x27;) }), error)
+  assert.equal(events[0].original_failure_type, &#x27;ACTIONABILITY_FAILURE&#x27;)
+  assert.equal(events[0].healing_attempted, false)
+  assert.equal(actions(), 1)
+})
+
+test(&#x27;baseline retains the original locator error and never attempts healing&#x27;, async () =&gt; {
+  const error = new Error(&#x27;locator.click: strict mode violation: resolved to 2 elements&#x27;)
+  const { engine, events } = fakeEngine({ mode: &#x27;BASELINE&#x27;, error })
+  await assert.rejects(engine.perform({ descriptor, validate: async () =&gt; {} }), error)
+  assert.equal(events[0].healing_attempted, false)
+  assert.equal(events[0].healing_reason, &#x27;BASELINE_NO_HEALING&#x27;)
+})
+
+test(&#x27;adaptive failure without a trusted same-page reference is refused and logged&#x27;, async () =&gt; {
+  const error = new Error(&#x27;locator.click: no element matches&#x27;)
+  const { engine, events } = fakeEngine({ error })
+  await assert.rejects(engine.perform({ descriptor, validate: async () =&gt; {} }), error)
+  assert.equal(events[0].healing_attempted, true)
+  assert.equal(events[0].healing_successful, false)
+  assert.equal(events[0].healing_reason, &#x27;NO_TRUSTED_REFERENCE_FOR_PAGE&#x27;)
+  validateHealingEvent(events[0])
+})
+
+test(&#x27;unsupported actions or missing original assertions are rejected before execution&#x27;, async () =&gt; {
+  const { engine, actions } = fakeEngine()
+  await assert.rejects(engine.perform({ descriptor, action: &#x27;forceClick&#x27;, validate: async () =&gt; {} }))
+  await assert.rejects(engine.perform({ descriptor }))
+  assert.equal(actions(), 0)
+})
+
+test(&#x27;a later test failure revokes a locally verified recovery&#x27;, () =&gt; {
+  const attachment = { name: &#x27;healing-events&#x27;, body: Buffer.from(JSON.stringify({ mode: &#x27;ADAPTIVE&#x27;, events: [event()] })) }
+  const result = readHealingResult([attachment], &#x27;FAIL&#x27;)
+  assert.equal(result.healing_successful, false)
+  assert.equal(result.healing_reason, &#x27;FINAL_TEST_DID_NOT_PASS&#x27;)
+  assert.equal(result.healing_events[0].original_assertions_passed, true)
+})
+
+test(&#x27;a recovered PASS preserves original failure separately from final failure taxonomy&#x27;, () =&gt; {
+  const row = record(summarizeHealing([event()], &#x27;ADAPTIVE&#x27;))
+  validateRecord(row)
+  assert.equal(row.failure_type, null)
+  assert.equal(row.original_failure_type, &#x27;LOCATOR_NOT_FOUND&#x27;)
+  assert.equal(row.healing_successful, true)
+})
+
+test(&#x27;invalid confidence, mode, false success and inconsistent summaries are rejected&#x27;, () =&gt; {
+  for (const changes of [{ confidence_score: 1.01 }, { original_assertions_passed: false }, { action_completed: false },
+    { original_failure_type: &#x27;ASSERTION_MISMATCH&#x27; }, { candidate_count: 2 }]) assert.throws(() =&gt; validateHealingEvent(event(changes)))
+  assert.throws(() =&gt; validateRecord(record({ ...summarizeHealing([event()], &#x27;ADAPTIVE&#x27;), healing_successful: false })))
+  assert.throws(() =&gt; validateRecord(record(summarizeHealing([event()], &#x27;BASELINE&#x27;))))
+})
+
+test(&#x27;healing history is a synchronized joinable projection with full ranking evidence&#x27;, t =&gt; {
+  const directory = temporary(t)
+  const row = record(summarizeHealing([event()], &#x27;ADAPTIVE&#x27;))
+  const store = new HistoryStore(directory)
+  store.append(row)
+  const projected = JSON.parse(fs.readFileSync(path.join(directory, &#x27;healing-history.json&#x27;)))
+  assert.deepEqual(projected, healingRows([row]))
+  assert.equal(projected[0].attempt_id, row.attempt_id)
+  assert.equal(fs.readFileSync(path.join(directory, &#x27;healing-history.csv&#x27;), &#x27;utf8&#x27;), serializeHealingCSV(projected))
+  const second = record()
+  atomicWrite(store.pending, JSON.stringify([row, second]))
+  fs.writeFileSync(path.join(directory, &#x27;healing-history.csv&#x27;), &#x27;interrupted&#x27;)
+  assert.equal(store.validate().length, 2)
+  assert.equal(fs.readFileSync(path.join(directory, &#x27;healing-history.csv&#x27;), &#x27;utf8&#x27;), serializeHealingCSV(projected))
+})
+
+test(&#x27;unexplained healing projection corruption is rejected&#x27;, t =&gt; {
+  const directory = temporary(t)
+  const store = new HistoryStore(directory)
+  store.append(record())
+  fs.writeFileSync(path.join(directory, &#x27;healing-history.json&#x27;), &#x27;[]&#x27;)
+  assert.throws(() =&gt; store.validate(), /projection is inconsistent/)
+})
+
+test(&#x27;v2 migration preserves every historical field and backs up source bytes&#x27;, t =&gt; {
+  const directory = temporary(t)
+  const next = record()
+  const old = Object.fromEntries(V2_SCHEMA.required.map(key =&gt; [key, key === &#x27;schema_version&#x27; ? 2 : next[key]]))
+  const json = JSON.stringify([old], null, 2) + &#x27;\n&#x27;
+  const store = new HistoryStore(directory)
+  fs.writeFileSync(store.json, json); fs.writeFileSync(store.csv, serializeCSV([old]))
+  const result = store.migrate()
+  assert.equal(fs.readFileSync(path.join(result.backup, &#x27;execution-history.v2.json&#x27;), &#x27;utf8&#x27;), json)
+  const migrated = store.validate()[0]
+  for (const key of Object.keys(old).filter(key =&gt; key !== &#x27;schema_version&#x27;)) assert.deepEqual(migrated[key], old[key])
+  assert.equal(migrated.healing_mode, &#x27;NONE&#x27;)
+  assert.equal(migrated.healing_attempted, false)
+  assert.equal(store.migrate().migrated, 0)
+})
+
+test(&#x27;intelligence groups healing-enabled and ordinary observations separately&#x27;, () =&gt; {
+  const result = buildIntelligenceReport([record(), record({ healing_mode: &#x27;ADAPTIVE&#x27; })])
+  assert.equal(result.tests.length, 2)
+  assert.deepEqual(result.tests.map(row =&gt; row.healingMode).sort(), [&#x27;ADAPTIVE&#x27;, &#x27;NONE&#x27;])
+})
+
+
+test(&#x27;reporter reads the latest eager snapshot rather than the pending first attachment&#x27;, () =&gt; {
+  const pending = event({ healing_successful: false, original_assertions_passed: false, action_completed: false, healing_reason: &#x27;RECOVERY_ACTION_IN_PROGRESS&#x27; })
+  const attachment = evidence =&gt; ({ name: &#x27;healing-events&#x27;, body: Buffer.from(JSON.stringify({ mode: &#x27;ADAPTIVE&#x27;, events: [evidence] })) })
+  const result = readHealingResult([attachment(pending), attachment(event())], &#x27;PASS&#x27;)
+  assert.equal(result.healing_successful, true)
+  assert.equal(result.healing_events.length, 1)
+  assert.equal(result.healing_reason, &#x27;RECOVERED_AND_ORIGINAL_ASSERTIONS_PASSED&#x27;)
+})
+</code></pre>
+<h2 id="automation/healing/healingEngine.js">automation/healing/healingEngine.js</h2><pre><code>import { randomUUID } from &#x27;node:crypto&#x27;
+import { performance } from &#x27;node:perf_hooks&#x27;
+import { classifyFailure } from &#x27;../telemetry/taxonomy.js&#x27;
+import { HEALING_POLICY } from &#x27;./confidenceScore.js&#x27;
+import { discoverCandidates, locatorFromDescriptor, readFeatures } from &#x27;./candidateDiscovery.js&#x27;
+import { rankCandidates, selectCandidate } from &#x27;./candidateRanking.js&#x27;
+
+export class HealingEngine {
+  constructor(page, { mode = &#x27;ADAPTIVE&#x27;, record = async () =&gt; {} } = {}) {
+    if (![&#x27;BASELINE&#x27;, &#x27;ADAPTIVE&#x27;].includes(mode)) throw new Error(&#x27;Unknown healing mode&#x27;)
+    this.page = page
+    this.mode = mode
+    this.record = record
+  }
+
+  async remember(locator) {
+    await locator.waitFor({ state: &#x27;visible&#x27;, timeout: 2_000 })
+    if (await locator.count() !== 1 || !await locator.isVisible()) throw new Error(&#x27;Reference must be one visible element before mutation&#x27;)
+    return { ...await readFeatures(locator), pageURL: this.page.url() }
+  }
+
+  async perform({ descriptor, reference, action = &#x27;click&#x27;, value, validate }) {
+    if (![&#x27;click&#x27;, &#x27;fill&#x27;].includes(action) || typeof validate !== &#x27;function&#x27;) throw new Error(&#x27;A supported action and original assertion callback are mandatory&#x27;)
+    const original = locatorFromDescriptor(this.page, descriptor)
+    const started = performance.now()
+    const event = { operation_id: randomUUID(), healing_mode: this.mode, healing_attempted: false, healing_successful: false,
+      original_locator: JSON.stringify(descriptor), candidate_locator: &#x27;&#x27;, candidate_count: 0, confidence_score: 0,
+      healing_duration_ms: 0, healing_reason: &#x27;ORIGINAL_ACTION&#x27;, original_failure_type: null, original_error: &#x27;&#x27;,
+      original_assertions_passed: false, action_completed: false, action_duration_ms: 0, total_duration_ms: 0,
+      reference: reference || {}, candidates: [], policy_version: HEALING_POLICY.version }
+    let originalError
+    let healingStart
+    const act = locator =&gt; action === &#x27;click&#x27; ? locator.click({ timeout: HEALING_POLICY.actionTimeoutMs }) : locator.fill(value, { timeout: HEALING_POLICY.actionTimeoutMs })
+    try {
+      try {
+        await act(original)
+        event.action_completed = true
+      } catch (error) {
+        originalError = error
+        event.original_error = error.message
+        event.original_failure_type = classifyFailure({ status: &#x27;FAIL&#x27;, errors: [error] }).type
+      }
+      event.action_duration_ms = performance.now() - started
+      if (originalError) {
+        event.healing_reason = this.mode === &#x27;BASELINE&#x27; ? &#x27;BASELINE_NO_HEALING&#x27; : &#x27;FAILURE_NOT_HEALABLE&#x27;
+        if (this.mode === &#x27;BASELINE&#x27; || ![&#x27;LOCATOR_NOT_FOUND&#x27;, &#x27;LOCATOR_AMBIGUOUS&#x27;].includes(event.original_failure_type)) throw originalError
+        const matches = await original.count()
+        if (event.original_failure_type === &#x27;LOCATOR_NOT_FOUND&#x27; &amp;&amp; matches !== 0 || event.original_failure_type === &#x27;LOCATOR_AMBIGUOUS&#x27; &amp;&amp; matches &lt; 2) {
+          event.healing_reason = &#x27;LOCATOR_FAILURE_NOT_REPRODUCIBLE&#x27;
+          throw originalError
+        }
+        event.healing_attempted = true
+        healingStart = performance.now()
+        if (!reference?.role || reference.pageURL !== this.page.url()) {
+          event.healing_reason = &#x27;NO_TRUSTED_REFERENCE_FOR_PAGE&#x27;
+          throw originalError
+        }
+        event.healing_reason = &#x27;CANDIDATE_DISCOVERY_FAILED&#x27;
+        await this.record(event)
+        event.candidates = rankCandidates(reference, await discoverCandidates(this.page, reference))
+        event.candidate_count = event.candidates.length
+        if (performance.now() - healingStart &gt; HEALING_POLICY.discoveryTimeoutMs) {
+          event.healing_reason = &#x27;DISCOVERY_BUDGET_EXCEEDED&#x27;
+          throw originalError
+        }
+        const selection = selectCandidate(event.candidates)
+        event.healing_reason = selection.reason
+        if (!selection.candidate) throw originalError
+        const selected = selection.candidate
+        event.candidate_locator = JSON.stringify(selected.descriptor)
+        event.confidence_score = selected.confidence
+        const candidate = locatorFromDescriptor(this.page, selected.descriptor)
+        // Revalidate identity immediately before the sole recovery action.
+        if (await candidate.count() !== 1 || JSON.stringify(await readFeatures(candidate)) !== JSON.stringify(selected.features)) {
+          event.healing_reason = &#x27;CANDIDATE_CHANGED_BEFORE_ACTION&#x27;
+          throw originalError
+        }
+        event.healing_reason = &#x27;RECOVERY_ACTION_IN_PROGRESS&#x27;
+        await this.record(event)
+        await act(candidate)
+        event.action_completed = true
+      }
+      // Assertion failures occur outside the locator-recovery catch. Never retry
+      // the business oracle with relaxed expectations or another candidate.
+      await this.record(event)
+      try { await validate() }
+      catch (error) { event.healing_reason = &#x27;ORIGINAL_ASSERTION_FAILED&#x27;; throw error }
+      event.original_assertions_passed = true
+      event.healing_successful = event.healing_attempted
+      event.healing_reason = event.healing_attempted ? &#x27;RECOVERED_AND_ORIGINAL_ASSERTIONS_PASSED&#x27; : &#x27;ORIGINAL_ACTION_AND_ASSERTIONS_PASSED&#x27;
+    } catch (error) {
+      if (event.healing_reason === &#x27;RECOVERY_ACTION_IN_PROGRESS&#x27;) event.healing_reason = &#x27;RECOVERY_ACTION_FAILED&#x27;
+      throw error
+    } finally {
+      event.total_duration_ms = performance.now() - started
+      event.healing_duration_ms = healingStart === undefined ? 0 : performance.now() - healingStart
+      await this.record(event)
+    }
+    return event
+  }
+}
+</code></pre>
+<h2 id="automation/healing/healingHistory.js">automation/healing/healingHistory.js</h2><pre><code>import { HEALING_POLICY } from &#x27;./confidenceScore.js&#x27;
+import { FAILURE_TYPES } from &#x27;../telemetry/taxonomy.js&#x27;
+
+export const HEALING_DEFAULTS = Object.freeze({
+  healing_mode: &#x27;NONE&#x27;, healing_attempted: false, healing_successful: false,
+  original_locator: &#x27;&#x27;, candidate_locator: &#x27;&#x27;, candidate_count: 0, confidence_score: 0,
+  healing_duration_ms: 0, healing_reason: &#x27;&#x27;, original_failure_type: null, healing_events: Object.freeze([]),
+})
+export const HEALING_FIELDS = Object.freeze(Object.keys(HEALING_DEFAULTS))
+const eventKeys = [&#x27;operation_id&#x27;, &#x27;healing_mode&#x27;, &#x27;healing_attempted&#x27;, &#x27;healing_successful&#x27;, &#x27;original_locator&#x27;,
+  &#x27;candidate_locator&#x27;, &#x27;candidate_count&#x27;, &#x27;confidence_score&#x27;, &#x27;healing_duration_ms&#x27;, &#x27;healing_reason&#x27;,
+  &#x27;original_failure_type&#x27;, &#x27;original_error&#x27;, &#x27;original_assertions_passed&#x27;, &#x27;action_completed&#x27;, &#x27;action_duration_ms&#x27;,
+  &#x27;total_duration_ms&#x27;, &#x27;reference&#x27;, &#x27;candidates&#x27;, &#x27;policy_version&#x27;]
+const finite = value =&gt; typeof value === &#x27;number&#x27; &amp;&amp; Number.isFinite(value) &amp;&amp; value &gt;= 0
+
+export function validateHealingEvent(event) {
+  if (!event || Object.keys(event).length !== eventKeys.length || eventKeys.some(key =&gt; !Object.hasOwn(event, key))) throw new Error(&#x27;Incomplete healing event&#x27;)
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(event.operation_id) || ![&#x27;BASELINE&#x27;, &#x27;ADAPTIVE&#x27;].includes(event.healing_mode)) throw new Error(&#x27;Invalid healing identity/mode&#x27;)
+  for (const field of [&#x27;healing_attempted&#x27;, &#x27;healing_successful&#x27;, &#x27;original_assertions_passed&#x27;, &#x27;action_completed&#x27;]) if (typeof event[field] !== &#x27;boolean&#x27;) throw new Error(`Invalid ${field}`)
+  for (const field of [&#x27;original_locator&#x27;, &#x27;candidate_locator&#x27;, &#x27;healing_reason&#x27;, &#x27;original_error&#x27;, &#x27;policy_version&#x27;]) if (typeof event[field] !== &#x27;string&#x27;) throw new Error(`Invalid ${field}`)
+  if (!event.original_locator || !event.healing_reason || !event.policy_version) throw new Error(&#x27;Healing evidence is missing&#x27;)
+  if (!Number.isInteger(event.candidate_count) || event.candidate_count &lt; 0 || event.candidate_count &gt; HEALING_POLICY.maxCandidates || !Array.isArray(event.candidates) || event.candidates.length !== event.candidate_count) throw new Error(&#x27;Invalid candidate count&#x27;)
+  for (const field of [&#x27;confidence_score&#x27;, &#x27;healing_duration_ms&#x27;, &#x27;action_duration_ms&#x27;, &#x27;total_duration_ms&#x27;]) if (!finite(event[field])) throw new Error(`Invalid ${field}`)
+  if (event.confidence_score &gt; 1 || ![null, ...FAILURE_TYPES].includes(event.original_failure_type)) throw new Error(&#x27;Invalid confidence or failure type&#x27;)
+  if (event.healing_attempted &amp;&amp; (event.healing_mode !== &#x27;ADAPTIVE&#x27; || ![&#x27;LOCATOR_NOT_FOUND&#x27;, &#x27;LOCATOR_AMBIGUOUS&#x27;].includes(event.original_failure_type))) throw new Error(&#x27;Only locator failures may trigger healing&#x27;)
+  if (event.healing_successful &amp;&amp; (!event.healing_attempted || !event.original_assertions_passed || !event.action_completed || !event.candidate_locator)) throw new Error(&#x27;Unverified healing success&#x27;)
+  if (!event.healing_attempted &amp;&amp; (event.candidate_count || event.candidate_locator || event.confidence_score || event.healing_duration_ms)) throw new Error(&#x27;Non-healing event contains recovery evidence&#x27;)
+  if (event.healing_successful &amp;&amp; (event.confidence_score &lt; HEALING_POLICY.threshold || !event.candidates.some(candidate =&gt; candidate.eligible &amp;&amp; JSON.stringify(candidate.descriptor) === event.candidate_locator &amp;&amp; candidate.confidence === event.confidence_score))) throw new Error(&#x27;Successful recovery lacks selected candidate evidence&#x27;)
+  if (!event.reference || typeof event.reference !== &#x27;object&#x27;) throw new Error(&#x27;Missing reference evidence&#x27;)
+  for (const candidate of event.candidates) {
+    if (!finite(candidate.confidence) || candidate.confidence &gt; 1 || typeof candidate.eligible !== &#x27;boolean&#x27; || !candidate.features || !candidate.signals || !Array.isArray(candidate.discoveredBy)) throw new Error(&#x27;Invalid candidate evidence&#x27;)
+    if (Object.values(candidate.signals).some(value =&gt; value !== null &amp;&amp; (!finite(value) || value &gt; 1))) throw new Error(&#x27;Invalid ranking signal&#x27;)
+  }
+  return event
+}
+
+export function summarizeHealing(events, mode = &#x27;NONE&#x27;) {
+  if (!events.length) return { ...HEALING_DEFAULTS, healing_mode: mode, healing_events: [] }
+  events.forEach(validateHealingEvent)
+  const selected = events.findLast(event =&gt; event.healing_attempted) || events.at(-1)
+  return {
+    healing_mode: mode, healing_attempted: events.some(event =&gt; event.healing_attempted),
+    healing_successful: events.some(event =&gt; event.healing_attempted) &amp;&amp; events.filter(event =&gt; event.healing_attempted).every(event =&gt; event.healing_successful),
+    original_locator: selected.original_locator, candidate_locator: selected.candidate_locator,
+    candidate_count: selected.candidate_count, confidence_score: selected.confidence_score,
+    healing_duration_ms: events.reduce((sum, event) =&gt; sum + event.healing_duration_ms, 0),
+    healing_reason: selected.healing_reason, original_failure_type: selected.original_failure_type,
+    healing_events: events,
+  }
+}
+
+export function validateHealingFields(row) {
+  if (row.healing_events.some(event =&gt; event.healing_mode !== row.healing_mode)) throw new Error(&#x27;Mixed healing modes in telemetry&#x27;)
+  row.healing_events.forEach(validateHealingEvent)
+  const summary = summarizeHealing(row.healing_events, row.healing_mode)
+  for (const field of HEALING_FIELDS) if (JSON.stringify(row[field]) !== JSON.stringify(summary[field])) throw new Error(`Inconsistent healing summary: ${field}`)
+  if (row.healing_successful &amp;&amp; row.status !== &#x27;PASS&#x27;) throw new Error(&#x27;A failing test cannot be a successful recovery&#x27;)
+}
+
+export function healingRows(records) {
+  return records.flatMap(row =&gt; (row.healing_events || []).map(event =&gt; ({
+    run_id: row.run_id, attempt_id: row.attempt_id, test_id: row.test_id, test_name: row.test_name,
+    browser: row.browser, status: row.status, experiment_id: row.experiment_id, scenario_variant: row.scenario_variant,
+    fault_variant: row.fault_variant, app_version: row.app_version, test_version: row.test_version,
+    trace_path: row.trace_path, screenshot_path: row.screenshot_path, ...event,
+  })))
+}
+export const HEALING_COLUMNS = [&#x27;run_id&#x27;, &#x27;attempt_id&#x27;, &#x27;test_id&#x27;, &#x27;test_name&#x27;, &#x27;browser&#x27;, &#x27;status&#x27;, &#x27;experiment_id&#x27;, &#x27;scenario_variant&#x27;,
+  &#x27;fault_variant&#x27;, &#x27;app_version&#x27;, &#x27;test_version&#x27;, &#x27;trace_path&#x27;, &#x27;screenshot_path&#x27;, ...eventKeys]
+export function serializeHealingCSV(rows) {
+  const cell = value =&gt; {
+    const text = value == null ? &#x27;&#x27; : typeof value === &#x27;object&#x27; ? JSON.stringify(value) : String(value)
+    return /[&quot;,\r\n]/.test(text) ? `&quot;${text.replaceAll(&#x27;&quot;&#x27;, &#x27;&quot;&quot;&#x27;)}&quot;` : text
+  }
+  return [HEALING_COLUMNS.join(&#x27;,&#x27;), ...rows.map(row =&gt; HEALING_COLUMNS.map(key =&gt; cell(row[key])).join(&#x27;,&#x27;))].join(&#x27;\r\n&#x27;) + &#x27;\r\n&#x27;
+}
+</code></pre>
+<h2 id="automation/healing/healingReporter.js">automation/healing/healingReporter.js</h2><pre><code>import fs from &#x27;node:fs&#x27;
+import { HEALING_DEFAULTS, summarizeHealing, validateHealingEvent } from &#x27;./healingHistory.js&#x27;
+
+// Bridge fixture evidence to the canonical reporter; publication is one journaled
+// transaction in HistoryStore, rather than two independent reporters/writers.
+export function readHealingResult(attachments, status, mode = &#x27;NONE&#x27;) {
+  const attachment = attachments.findLast(item =&gt; item.name === &#x27;healing-events&#x27;)
+  if (!attachment) return { ...HEALING_DEFAULTS, healing_mode: mode, healing_events: [] }
+  const payload = JSON.parse(attachment.body ? attachment.body.toString(&#x27;utf8&#x27;) : fs.readFileSync(attachment.path, &#x27;utf8&#x27;))
+  if (![&#x27;BASELINE&#x27;, &#x27;ADAPTIVE&#x27;].includes(payload.mode) || !Array.isArray(payload.events)) throw new Error(&#x27;Invalid healing attachment&#x27;)
+  const events = payload.events.map(event =&gt; {
+    validateHealingEvent(event)
+    if (event.healing_mode !== payload.mode) throw new Error(&#x27;Mixed healing modes in one attempt&#x27;)
+    return event.healing_successful &amp;&amp; status !== &#x27;PASS&#x27;
+      ? { ...event, healing_successful: false, healing_reason: &#x27;FINAL_TEST_DID_NOT_PASS&#x27; } : event
+  })
+  return summarizeHealing(events, payload.mode)
+}
+</code></pre>
+<h2 id="automation/healing/playwright.config.js">automation/healing/playwright.config.js</h2><pre><code>import { defineConfig } from &#x27;@playwright/test&#x27;
+import { fileURLToPath } from &#x27;node:url&#x27;
+import base from &#x27;../playwright.config.js&#x27;
+
+export default defineConfig({
+  ...base,
+  projects: [&#x27;BASELINE&#x27;, &#x27;ADAPTIVE&#x27;].map(mode =&gt; ({ ...base.projects[0], name: mode.toLowerCase(), use: { ...base.projects[0].use, healingMode: mode } })),
+  testDir: fileURLToPath(new URL(&#x27;evaluation&#x27;, import.meta.url)),
+  fullyParallel: false, workers: 1, retries: 0, timeout: 20_000,
+  expect: { timeout: 900 },
+  outputDir: fileURLToPath(new URL(&#x27;../reports/healing/results&#x27;, import.meta.url)),
+  use: { ...base.use, trace: &#x27;on&#x27;, screenshot: &#x27;on&#x27; },
+  reporter: [
+    [&#x27;list&#x27;],
+    [&#x27;html&#x27;, { outputFolder: fileURLToPath(new URL(&#x27;../reports/healing/html&#x27;, import.meta.url)), open: &#x27;never&#x27; }],
+    [fileURLToPath(new URL(&#x27;../telemetry/TelemetryReporter.js&#x27;, import.meta.url))],
+  ],
+})
+</code></pre>
+<h2 id="automation/healing/tests/engine.spec.js">automation/healing/tests/engine.spec.js</h2><pre><code>import { test, expect } from &#x27;../fixtures.js&#x27;
+
+async function pageWithButton(page) {
+  await page.setContent(&#x27;&lt;main&gt;&lt;h1&gt;Checkout&lt;/h1&gt;&lt;button id=&quot;purchase&quot; type=&quot;button&quot; data-testid=&quot;checkout&quot; aria-label=&quot;Proceed to checkout&quot;&gt;Proceed to checkout&lt;/button&gt;&lt;output&gt;&lt;/output&gt;&lt;/main&gt;&#x27;)
+  await page.locator(&#x27;button&#x27;).evaluate(element =&gt; element.addEventListener(&#x27;click&#x27;, () =&gt; { document.querySelector(&#x27;output&#x27;).textContent = &#x27;complete&#x27; }))
+}
+
+for (const strategy of [&#x27;role&#x27;, &#x27;text&#x27;, &#x27;testId&#x27;, &#x27;ariaLabel&#x27;]) {
+  test(`heals a ${strategy} locator using actual browser semantics`, async ({ page, healing }) =&gt; {
+    await pageWithButton(page)
+    const target = page.locator(&#x27;button&#x27;)
+    const reference = await healing.remember(target)
+    const descriptor = strategy === &#x27;role&#x27; ? { strategy, role: &#x27;button&#x27;, value: &#x27;Proceed to checkout&#x27; }
+      : { strategy, value: strategy === &#x27;testId&#x27; ? &#x27;checkout&#x27; : &#x27;Proceed to checkout&#x27; }
+    await target.evaluate((element, kind) =&gt; {
+      if (kind === &#x27;testId&#x27;) element.setAttribute(&#x27;data-testid&#x27;, &#x27;purchase&#x27;)
+      else if (kind === &#x27;ariaLabel&#x27;) element.setAttribute(&#x27;aria-label&#x27;, &#x27;Proceed to purchase&#x27;)
+      else if (kind === &#x27;text&#x27;) element.textContent = &#x27;Proceed to purchase&#x27;
+      else { element.setAttribute(&#x27;aria-label&#x27;, &#x27;Proceed to purchase&#x27;); element.textContent = &#x27;Proceed to purchase&#x27; }
+    }, strategy)
+    const result = await healing.perform({ descriptor, reference, validate: () =&gt; expect(page.locator(&#x27;output&#x27;)).toHaveText(&#x27;complete&#x27;) })
+    expect(result.healing_successful).toBe(true)
+    expect(result.candidates.some(candidate =&gt; candidate.discoveredBy.includes(strategy))).toBe(true)
+  })
+}
+
+test(&#x27;heals a changed label and fills the intended input&#x27;, async ({ page, healing }) =&gt; {
+  await page.setContent(&#x27;&lt;main&gt;&lt;h1&gt;Cart&lt;/h1&gt;&lt;label for=&quot;basket&quot;&gt;Cart&lt;/label&gt;&lt;input id=&quot;basket&quot; name=&quot;basket&quot;&gt;&lt;/main&gt;&#x27;)
+  const reference = await healing.remember(page.getByLabel(&#x27;Cart&#x27;, { exact: true }))
+  await page.locator(&#x27;label&#x27;).evaluate(element =&gt; { element.textContent = &#x27;Basket&#x27; })
+  const result = await healing.perform({ descriptor: { strategy: &#x27;label&#x27;, value: &#x27;Cart&#x27; }, reference, action: &#x27;fill&#x27;, value: &#x27;sample&#x27;,
+    validate: () =&gt; expect(page.locator(&#x27;input&#x27;)).toHaveValue(&#x27;sample&#x27;) })
+  expect(result.healing_successful).toBe(true)
+  expect(result.candidates[0].discoveredBy).toContain(&#x27;label&#x27;)
+})
+
+test(&#x27;refuses identical duplicated elements without clicking either&#x27;, async ({ page, healing }) =&gt; {
+  await pageWithButton(page)
+  const reference = await healing.remember(page.locator(&#x27;button&#x27;))
+  await page.locator(&#x27;button&#x27;).evaluate(element =&gt; element.after(element.cloneNode(true)))
+  await expect(healing.perform({ descriptor: { strategy: &#x27;role&#x27;, role: &#x27;button&#x27;, value: &#x27;Proceed to checkout&#x27; }, reference,
+    validate: () =&gt; expect(page.locator(&#x27;output&#x27;)).toHaveText(&#x27;complete&#x27;) })).rejects.toThrow(/strict mode/)
+  await expect(page.locator(&#x27;output&#x27;)).toBeEmpty()
+})
+
+test(&#x27;candidate action cannot convert an original assertion mismatch into success&#x27;, async ({ page, healing }) =&gt; {
+  await pageWithButton(page)
+  const reference = await healing.remember(page.locator(&#x27;button&#x27;))
+  await page.locator(&#x27;button&#x27;).evaluate(element =&gt; { element.setAttribute(&#x27;data-testid&#x27;, &#x27;purchase&#x27;) })
+  let count = 0
+  await expect(healing.perform({ descriptor: { strategy: &#x27;testId&#x27;, value: &#x27;checkout&#x27; }, reference, validate: async () =&gt; {
+    count++
+    await expect(page.locator(&#x27;output&#x27;)).toHaveText(&#x27;business defect remains&#x27;, { timeout: 200 })
+  } })).rejects.toThrow()
+  expect(count).toBe(1)
+  await expect(page.locator(&#x27;output&#x27;)).toHaveText(&#x27;complete&#x27;)
+})
+
+test(&#x27;low semantic confidence leaves the target untouched&#x27;, async ({ page, healing }) =&gt; {
+  await pageWithButton(page)
+  const reference = await healing.remember(page.locator(&#x27;button&#x27;))
+  await page.locator(&#x27;button&#x27;).evaluate(element =&gt; { element.textContent = &#x27;Cancel&#x27;; element.setAttribute(&#x27;aria-label&#x27;, &#x27;Cancel&#x27;) })
+  await expect(healing.perform({ descriptor: { strategy: &#x27;role&#x27;, role: &#x27;button&#x27;, value: &#x27;Proceed to checkout&#x27; }, reference,
+    validate: async () =&gt; expect.fail(&#x27;Must not execute the oracle&#x27;) })).rejects.toThrow()
+  await expect(page.locator(&#x27;output&#x27;)).toBeEmpty()
+})
+
+test(&#x27;a changed destination is rejected even if the accessible name matches&#x27;, async ({ page, healing }) =&gt; {
+  await page.setContent(&#x27;&lt;main&gt;&lt;a id=&quot;checkout&quot; href=&quot;#checkout&quot;&gt;Proceed to checkout&lt;/a&gt;&lt;/main&gt;&#x27;)
+  const reference = await healing.remember(page.locator(&#x27;a&#x27;))
+  await page.locator(&#x27;a&#x27;).evaluate(element =&gt; { element.setAttribute(&#x27;href&#x27;, &#x27;#wrong&#x27;); element.setAttribute(&#x27;data-testid&#x27;, &#x27;new&#x27;) })
+  await expect(healing.perform({ descriptor: { strategy: &#x27;testId&#x27;, value: &#x27;old&#x27; }, reference, validate: async () =&gt; {} })).rejects.toThrow()
+  expect(page.url()).not.toContain(&#x27;#wrong&#x27;)
+})
+</code></pre>
+<h2 id="automation/intelligence/intelligence.test.js">automation/intelligence/intelligence.test.js</h2><pre><code>import test from &#x27;node:test&#x27;
+import { HEALING_DEFAULTS } from &#x27;../healing/healingHistory.js&#x27;
+import assert from &#x27;node:assert/strict&#x27;
+import fs from &#x27;node:fs&#x27;
+import os from &#x27;node:os&#x27;
+import path from &#x27;node:path&#x27;
+import { randomUUID, createHash } from &#x27;node:crypto&#x27;
+import { execFileSync } from &#x27;node:child_process&#x27;
+import { fileURLToPath } from &#x27;node:url&#x27;
+import { calculateMetrics } from &#x27;./metrics.js&#x27;
+import { calculateRisk } from &#x27;./riskCalculator.js&#x27;
+import { analyzeFailures } from &#x27;./failureAnalyzer.js&#x27;
+import { generateRecommendations } from &#x27;./recommendationEngine.js&#x27;
+import { buildIntelligenceReport, generateIntelligenceReport, reportCSV, loadCampaigns } from &#x27;./intelligenceReport.js&#x27;
+import { createRunMetadata, experimentMetadata } from &#x27;../telemetry/metadata.js&#x27;
+import { HistoryStore } from &#x27;../telemetry/history.js&#x27;
+import { FAILURE_TYPES } from &#x27;../telemetry/taxonomy.js&#x27;
+
+const metadata = createRunMetadata({ workers: 1 })
+function record(overrides = {}) {
+  const row = {
+    schema_version: 3, ...HEALING_DEFAULTS, healing_events: [], record_type: &#x27;TEST_ATTEMPT&#x27;, ...metadata,
+    run_id: randomUUID(), attempt_id: randomUUID(), test_id: &#x27;TEST-001&#x27;, test_name: &#x27;Checkout&#x27;, suite_name: &#x27;Checkout&#x27;,
+    browser: &#x27;chromium&#x27;, project_name: &#x27;chromium&#x27;, status: &#x27;PASS&#x27;, failure_type: null, duration_ms: 100,
+    retry_count: 0, start_time: &#x27;2026-10-19T10:00:00.000Z&#x27;, end_time: &#x27;2026-10-19T10:00:00.100Z&#x27;,
+    trace_path: null, screenshot_path: null, notes: &#x27;&#x27;, ...experimentMetadata(), expected_status: &#x27;PASS&#x27;,
+    classification_source: &#x27;NONE&#x27;, failure_phase: &#x27;test&#x27;, error_message: &#x27;&#x27;, error_stack: &#x27;&#x27;, runtime_errors: [],
+    worker_index: 0, repeat_index: 0, ...overrides,
+  }
+  row.end_time = new Date(Date.parse(row.start_time) + row.duration_ms).toISOString()
+  return row
+}
+const fail = (changes = {}) =&gt; record({ status: &#x27;FAIL&#x27;, failure_type: &#x27;ASSERTION_MISMATCH&#x27;, classification_source: &#x27;HEURISTIC&#x27;, ...changes })
+function temporary(t) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), &#x27;sut-intelligence-&#x27;))
+  t.after(() =&gt; fs.rmSync(directory, { recursive: true, force: true }))
+  return directory
+}
+function experiment(changes = {}) {
+  return fail({ experiment_id: &#x27;EXP-v1&#x27;, fault_variant: &#x27;rename.v1&#x27;, mutation_version: &#x27;1.0.1&#x27;,
+    fault_type: &#x27;ACCESSIBLE_NAME_CHANGE&#x27;, emulated: true, injected_at: &#x27;2026-10-19T09:59:59.000Z&#x27;,
+    injection_verified: true, failure_type: &#x27;LOCATOR_NOT_FOUND&#x27;, expected_failure_type: &#x27;LOCATOR_NOT_FOUND&#x27;, ...changes })
+}
+function campaign(rows, changes = {}) {
+  return { campaign_id: randomUUID(), status: &#x27;VERIFIED&#x27;, expected_rows: rows.length,
+    attempt_ids: rows.map(row =&gt; row.attempt_id), run_ids: [...new Set(rows.map(row =&gt; row.run_id))],
+    experiments: [{ id: &#x27;EXP-v1&#x27;, variant: &#x27;rename.v1&#x27;, version: &#x27;1.0.1&#x27; }],
+    app_version: rows[0].app_version, test_version: rows[0].test_version, ...changes }
+}
+
+test(&#x27;first-attempt failures, recovery, and final failures have distinct denominators&#x27;, () =&gt; {
+  const run = randomUUID()
+  const metrics = calculateMetrics([record(), record({ run_id: run, retry_count: 1, duration_ms: 40 }), fail({ run_id: run }), fail()])
+  assert.equal(metrics.scoredExecutionCount, 3)
+  assert.equal(metrics.failureRate, 2 / 3)
+  assert.equal(metrics.finalFailureRate, 1 / 3)
+  assert.equal(metrics.recoveredExecutions, 1)
+  assert.equal(metrics.stabilityScore, 100 * (1 - 2 / 3))
+  assert.equal(metrics.retryRate, 1 / 3)
+  assert.equal(metrics.retryCost, 40)
+})
+
+test(&#x27;retry cost sums additional durations once, never retry indexes&#x27;, () =&gt; {
+  const run = randomUUID()
+  const metrics = calculateMetrics([fail({ run_id: run }), fail({ run_id: run, retry_count: 1, duration_ms: 70 }),
+    record({ run_id: run, retry_count: 2, duration_ms: 30 })])
+  assert.equal(metrics.retryAttempts, 2)
+  assert.equal(metrics.retryCost, 100)
+  assert.equal(metrics.retryDurationRatio, 0.5)
+  assert.equal(metrics.retryRate, 1)
+})
+
+test(&#x27;repeats and projects are independent logical executions&#x27;, () =&gt; {
+  const run = randomUUID()
+  const metrics = calculateMetrics([record({ run_id: run }), fail({ run_id: run, repeat_index: 1 }), record({ run_id: run, project_name: &#x27;mobile&#x27; })])
+  assert.equal(metrics.scoredExecutionCount, 3)
+})
+
+test(&#x27;skipped, interrupted, incomplete, duplicate retry indexes, and expected failures are excluded&#x27;, () =&gt; {
+  const run = randomUUID()
+  const rows = [record({ status: &#x27;SKIPPED&#x27; }), fail({ status: &#x27;INTERRUPTED&#x27; }), fail({ retry_count: 1 }),
+    fail({ expected_status: &#x27;FAIL&#x27; }), record({ run_id: run }), record({ run_id: run })]
+  const result = calculateMetrics(rows)
+  assert.equal(result.scoredExecutionCount, 0)
+  assert.equal(result.excludedExecutions.incompleteExecution, 4)
+  assert.equal(result.excludedExecutions.expectedNonPass, 1)
+  assert.equal(result.failureRate, null)
+  assert.deepEqual(calculateRisk(result), { riskScore: null, riskLevel: null, evidence: &#x27;NO_SCORABLE_EXECUTIONS&#x27; })
+})
+
+test(&#x27;passing negative business validation is stable and has no failure recommendations&#x27;, () =&gt; {
+  const rows = Array.from({ length: 10 }, () =&gt; record({ test_name: &#x27;Invalid coupon rejected&#x27; }))
+  const report = buildIntelligenceReport(rows)
+  assert.equal(report.tests[0].riskScore, 0)
+  assert.equal(report.tests[0].riskLevel, &#x27;LOW&#x27;)
+  assert.equal(report.tests[0].stabilityScore, 100)
+  assert.deepEqual(report.tests[0].recommendations, [])
+})
+
+test(&#x27;locator volatility proxy uses observed failure evidence, not mutation or expected labels&#x27;, () =&gt; {
+  const metrics = calculateMetrics([record({ locator_mutation: &#x27;rename&#x27;, expected_failure_type: &#x27;LOCATOR_NOT_FOUND&#x27; }),
+    fail({ failure_type: &#x27;LOCATOR_AMBIGUOUS&#x27; }), fail()])
+  assert.equal(metrics.locatorVolatility, 1 / 3)
+  assert.equal(metrics.locatorAffectedExecutions, 1)
+})
+
+test(&#x27;risk weights, thresholds, and limited evidence are explicit&#x27;, () =&gt; {
+  const calculate = changes =&gt; calculateRisk({ failureRate: 0, retryRate: 0, locatorVolatility: 0, scoredExecutionCount: 10, ...changes })
+  assert.equal(calculate({ failureRate: 0.49 }).riskLevel, &#x27;LOW&#x27;)
+  assert.equal(calculate({ failureRate: 0.5 }).riskLevel, &#x27;MEDIUM&#x27;)
+  assert.equal(calculate({ failureRate: 1 }).riskLevel, &#x27;HIGH&#x27;)
+  assert.equal(calculate({ failureRate: 1, retryRate: 1, locatorVolatility: 1 }).riskScore, 100)
+  assert.equal(calculate({ scoredExecutionCount: 2 }).evidence, &#x27;LIMITED_HISTORY&#x27;)
+  assert.throws(() =&gt; calculate({ retryRate: 1.01 }))
+})
+
+test(&#x27;all eight observed failure classes have actionable recommendations&#x27;, () =&gt; {
+  for (const type of FAILURE_TYPES) {
+    const rows = [fail({ failure_type: type })]
+    const metrics = calculateMetrics(rows)
+    const analysis = analyzeFailures(rows)
+    assert.equal(analysis.counts[type], 1)
+    assert.equal(analysis.failedAttempts, 1)
+    assert.ok(generateRecommendations(metrics, analysis).length &gt;= 2)
+  }
+})
+
+test(&#x27;retry advice appears for recovered failures and evidence remains linked&#x27;, () =&gt; {
+  const first = fail()
+  const second = record({ run_id: first.run_id, retry_count: 1 })
+  const result = buildIntelligenceReport([second, first]).tests[0]
+  assert.ok(result.recommendations.some(text =&gt; text.includes(&#x27;Investigate retries&#x27;)))
+  assert.ok(result.recommendations.some(text =&gt; text.includes(&#x27;intermittent&#x27;)))
+  assert.deepEqual(result.scoredAttemptIds, [first.attempt_id, second.attempt_id].sort())
+})
+
+test(&#x27;verified experiments remain separate; invalid and unregistered experiments are excluded&#x27;, () =&gt; {
+  const ordinary = record()
+  const accepted = experiment()
+  const rejected = experiment()
+  const report = buildIntelligenceReport([ordinary, accepted, rejected], [campaign([accepted]), campaign([rejected], { status: &#x27;INVALID&#x27; })])
+  assert.equal(report.tests.length, 2)
+  assert.equal(report.selection.acceptedAttempts, 2)
+  assert.equal(report.selection.excluded.unverifiedExperimentAttempts, 1)
+  assert.equal(report.tests.find(row =&gt; row.cohort === &#x27;ordinary&#x27;).riskScore, 0)
+  assert.equal(report.tests.find(row =&gt; row.cohort === &#x27;verified-experiment&#x27;).riskScore, 75)
+})
+
+test(&#x27;healthy experiment controls stay in the experiment cohort despite emulated=false&#x27;, () =&gt; {
+  const row = experiment({ status: &#x27;PASS&#x27;, failure_type: null, classification_source: &#x27;NONE&#x27;, emulated: false,
+    injected_at: null, injection_verified: false, fault_type: &#x27;&#x27;, expected_failure_type: null })
+  const result = buildIntelligenceReport([row], [campaign([row])]).tests[0]
+  assert.equal(result.cohort, &#x27;verified-experiment&#x27;)
+  assert.equal(result.riskScore, 0)
+})
+
+test(&#x27;verified manifests fail closed on missing, duplicate, mismatched, or unconfirmed membership&#x27;, () =&gt; {
+  const row = experiment()
+  for (const manifest of [campaign([row], { expected_rows: 2 }), campaign([row], { attempt_ids: [randomUUID()] }),
+    campaign([row], { app_version: &#x27;wrong&#x27; }), campaign([row], { run_ids: [] }), campaign([row], { experiments: [] })]) {
+    assert.throws(() =&gt; buildIntelligenceReport([row], [manifest]))
+  }
+  assert.throws(() =&gt; buildIntelligenceReport([row], [campaign([row]), campaign([row])]))
+  assert.throws(() =&gt; buildIntelligenceReport([{ ...row, injection_verified: false }], [campaign([row])]))
+})
+
+test(&#x27;run errors are reported separately and cannot inflate per-test risk&#x27;, () =&gt; {
+  const row = fail({ record_type: &#x27;RUN_ERROR&#x27;, test_id: &#x27;__RUN__&#x27;, failure_phase: &#x27;run&#x27;, failure_type: &#x27;SETUP_ENVIRONMENT_FAILURE&#x27; })
+  const result = buildIntelligenceReport([record(), row])
+  assert.equal(result.selection.excluded.runErrors, 1)
+  assert.equal(result.runErrors[0].failureType, &#x27;SETUP_ENVIRONMENT_FAILURE&#x27;)
+  assert.equal(result.tests[0].riskScore, 0)
+})
+
+test(&#x27;schema errors and duplicate telemetry identities are rejected&#x27;, () =&gt; {
+  const row = record()
+  assert.throws(() =&gt; buildIntelligenceReport([row, row]))
+  assert.throws(() =&gt; buildIntelligenceReport([{ ...row, duration_ms: -1 }]))
+})
+
+test(&#x27;empty history has no fabricated low-risk tests&#x27;, () =&gt; {
+  const result = buildIntelligenceReport([])
+  assert.deepEqual(result.tests, [])
+  assert.equal(result.selection.acceptedAttempts, 0)
+  assert.equal(reportCSV(result).split(&#x27;\r\n&#x27;).length, 2)
+})
+
+test(&#x27;CSV safely quotes test names and recommendation arrays&#x27;, () =&gt; {
+  const result = reportCSV(buildIntelligenceReport([fail({ test_name: &#x27;Coupon, &quot;SAVE10&quot;\nrejected&#x27; })]))
+  assert.ok(result.includes(&#x27;&quot;Coupon, &quot;&quot;SAVE10&quot;&quot;\nrejected&quot;&#x27;))
+  assert.ok(result.includes(&#x27;&quot;[&quot;&quot;&#x27;))
+})
+
+test(&#x27;report snapshots and latest pointer agree; raw history bytes stay unchanged&#x27;, t =&gt; {
+  const directory = temporary(t)
+  const store = new HistoryStore(directory)
+  store.append(record())
+  const before = [store.json, store.csv].map(file =&gt; fs.readFileSync(file, &#x27;utf8&#x27;))
+  const { report, output } = generateIntelligenceReport({ directory })
+  const latest = JSON.parse(fs.readFileSync(path.join(directory, &#x27;intelligence/latest.json&#x27;)))
+  const json = fs.readFileSync(path.join(output, &#x27;intelligence-report.json&#x27;))
+  const csv = fs.readFileSync(path.join(output, &#x27;test-intelligence.csv&#x27;))
+  assert.deepEqual(JSON.parse(json), report)
+  assert.equal(latest.jsonSha256, createHash(&#x27;sha256&#x27;).update(json).digest(&#x27;hex&#x27;))
+  assert.equal(latest.csvSha256, createHash(&#x27;sha256&#x27;).update(csv).digest(&#x27;hex&#x27;))
+  assert.deepEqual([store.json, store.csv].map(file =&gt; fs.readFileSync(file, &#x27;utf8&#x27;)), before)
+  const next = generateIntelligenceReport({ directory })
+  assert.notEqual(next.report.analysisId, report.analysisId)
+  assert.ok(fs.existsSync(output))
+})
+
+test(&#x27;corrupt history or malformed campaign does not replace the latest report&#x27;, t =&gt; {
+  const directory = temporary(t)
+  const store = new HistoryStore(directory)
+  store.append(record())
+  generateIntelligenceReport({ directory })
+  const latestPath = path.join(directory, &#x27;intelligence/latest.json&#x27;)
+  const before = fs.readFileSync(latestPath, &#x27;utf8&#x27;)
+  fs.writeFileSync(store.csv, &#x27;corrupt&#x27;)
+  assert.throws(() =&gt; generateIntelligenceReport({ directory }), /inconsistent/)
+  assert.equal(fs.readFileSync(latestPath, &#x27;utf8&#x27;), before)
+  const root = path.join(directory, &#x27;campaigns&#x27;, &#x27;bad&#x27;)
+  fs.mkdirSync(root, { recursive: true })
+  fs.writeFileSync(path.join(root, &#x27;campaign.json&#x27;), &#x27;{}&#x27;)
+  assert.throws(() =&gt; loadCampaigns(directory), /Invalid campaign/)
+})
+
+test(&#x27;CLI supports TELEMETRY_DIR without requiring a browser or app server&#x27;, t =&gt; {
+  const directory = temporary(t)
+  new HistoryStore(directory).append(record())
+  const output = execFileSync(process.execPath, [fileURLToPath(new URL(&#x27;./intelligenceReport.js&#x27;, import.meta.url))],
+    { env: { ...process.env, TELEMETRY_DIR: directory }, encoding: &#x27;utf8&#x27; })
+  assert.equal(JSON.parse(output).source.recordCount, 1)
+})
+
+test(&#x27;a retry after an already passing attempt is not a valid retry chain&#x27;, () =&gt; {
+  const row = record()
+  const result = calculateMetrics([row, fail({ run_id: row.run_id, retry_count: 1 })])
+  assert.equal(result.scoredExecutionCount, 0)
+  assert.equal(result.excludedExecutions.incompleteExecution, 1)
+})
+
+test(&#x27;report preserves artifact references and uses observed labels despite experiment expectations&#x27;, () =&gt; {
+  const row = experiment({ failure_type: &#x27;ASSERTION_MISMATCH&#x27;, trace_path: &#x27;artifacts/run/trace.zip&#x27;, screenshot_path: &#x27;artifacts/run/screen.png&#x27; })
+  const result = buildIntelligenceReport([row], [campaign([row])]).tests[0]
+  assert.equal(result.riskScore, 60)
+  assert.equal(result.locatorVolatility, 0)
+  assert.equal(result.failures.counts.ASSERTION_MISMATCH, 1)
+  assert.equal(result.failures.counts.LOCATOR_NOT_FOUND, 0)
+  assert.equal(result.artifacts[0].tracePath, row.trace_path)
+  assert.ok(result.recommendations.some(text =&gt; text.includes(&#x27;business requirement&#x27;)))
+  assert.ok(!result.recommendations.some(text =&gt; text.includes(&#x27;Review locator strategy&#x27;)))
+})
+
+
+test(&#x27;Sprint 6 healing evaluation rows are explicitly excluded from ordinary risk summaries&#x27;, () =&gt; {
+  const report = buildIntelligenceReport([record(), record({ experiment_id: &#x27;S6-rename-v1&#x27;, healing_mode: &#x27;ADAPTIVE&#x27; })])
+  assert.equal(report.tests.length, 1)
+  assert.equal(report.selection.excluded.healingEvaluationAttempts, 1)
+  assert.equal(report.selection.excluded.unverifiedExperimentAttempts, 0)
+})
+</code></pre>
+<h2 id="automation/intelligence/intelligenceReport.js">automation/intelligence/intelligenceReport.js</h2><pre><code>import fs from &#x27;node:fs&#x27;
+import path from &#x27;node:path&#x27;
+import { createHash, randomUUID } from &#x27;node:crypto&#x27;
+import { pathToFileURL } from &#x27;node:url&#x27;
+import { HistoryStore, atomicWrite } from &#x27;../telemetry/history.js&#x27;
+import { validateHistory } from &#x27;../telemetry/schema.js&#x27;
+import { PROJECT_ROOT } from &#x27;../telemetry/metadata.js&#x27;
+import { calculateMetrics } from &#x27;./metrics.js&#x27;
+import { calculateRisk, RISK_MODEL } from &#x27;./riskCalculator.js&#x27;
+import { analyzeFailures } from &#x27;./failureAnalyzer.js&#x27;
+import { generateRecommendations } from &#x27;./recommendationEngine.js&#x27;
+
+const hash = value =&gt; createHash(&#x27;sha256&#x27;).update(JSON.stringify(value)).digest(&#x27;hex&#x27;)
+const unique = values =&gt; [...new Set(values)].sort()
+const experimental = row =&gt; Boolean(row.experiment_id || row.emulated || row.locator_mutation || row.fault_variant || row.fault_type || row.injected_at)
+
+export function loadCampaigns(directory) {
+  const root = path.join(directory, &#x27;campaigns&#x27;)
+  if (!fs.existsSync(root)) return []
+  return fs.readdirSync(root, { withFileTypes: true }).filter(entry =&gt; entry.isDirectory()).sort((a, b) =&gt; a.name.localeCompare(b.name)).map(entry =&gt; {
+    const manifest = JSON.parse(fs.readFileSync(path.join(root, entry.name, &#x27;campaign.json&#x27;), &#x27;utf8&#x27;))
+    if (manifest.campaign_id !== entry.name || ![&#x27;VERIFIED&#x27;, &#x27;INVALID&#x27;, &#x27;RUNNING&#x27;].includes(manifest.status)) throw new Error(`Invalid campaign manifest: ${entry.name}`)
+    return manifest
+  })
+}
+
+function verifiedMembership(records, campaigns) {
+  const byId = new Map(records.map(row =&gt; [row.attempt_id, row]))
+  const membership = new Map()
+  for (const campaign of campaigns.filter(item =&gt; item.status === &#x27;VERIFIED&#x27;)) {
+    if (!Array.isArray(campaign.attempt_ids) || campaign.attempt_ids.length !== campaign.expected_rows ||
+        new Set(campaign.attempt_ids).size !== campaign.attempt_ids.length || !Array.isArray(campaign.experiments)) {
+      throw new Error(`Incomplete verified campaign: ${campaign.campaign_id}`)
+    }
+    for (const id of campaign.attempt_ids) {
+      const row = byId.get(id)
+      const recipe = campaign.experiments.find(item =&gt; item.id === row?.experiment_id &amp;&amp; item.variant === row?.fault_variant &amp;&amp; item.version === row?.mutation_version)
+      if (!row || row.record_type !== &#x27;TEST_ATTEMPT&#x27; || !recipe || membership.has(id) ||
+          row.app_version !== campaign.app_version || row.test_version !== campaign.test_version ||
+          !(campaign.run_ids || [campaign.run_id]).includes(row.run_id) ||
+          (row.emulated &amp;&amp; !row.injection_verified)) throw new Error(`Unverifiable campaign membership: ${id}`)
+      membership.set(id, campaign.campaign_id)
+    }
+  }
+  return membership
+}
+
+export function buildIntelligenceReport(records, campaigns = [], { generatedAt = new Date().toISOString(), analysisId = randomUUID() } = {}) {
+  validateHistory(records)
+  const membership = verifiedMembership(records, campaigns)
+  const excluded = { runErrors: 0, unverifiedExperimentAttempts: 0, healingEvaluationAttempts: 0 }
+  const groups = new Map()
+  for (const row of records) {
+    if (row.record_type === &#x27;RUN_ERROR&#x27;) { excluded.runErrors++; continue }
+    if (row.experiment_id.startsWith(&#x27;S6-&#x27;)) { excluded.healingEvaluationAttempts++; continue }
+    const campaignId = membership.get(row.attempt_id)
+    if (!campaignId &amp;&amp; experimental(row)) { excluded.unverifiedExperimentAttempts++; continue }
+    const identity = {
+      testId: row.test_id, suiteName: row.suite_name, browser: row.browser, projectName: row.project_name,
+      cohort: campaignId ? &#x27;verified-experiment&#x27; : &#x27;ordinary&#x27;, healingMode: row.healing_mode || &#x27;NONE&#x27;,
+      experimentId: row.experiment_id, faultVariant: row.fault_variant,
+      scenarioVariant: row.scenario_variant, mutationVersion: row.mutation_version || &#x27;&#x27;,
+    }
+    const key = JSON.stringify(identity)
+    if (!groups.has(key)) groups.set(key, { identity, rows: [] })
+    groups.get(key).rows.push(row)
+  }
+  const tests = [...groups.values()].map(({ identity, rows }) =&gt; {
+    const metrics = calculateMetrics(rows)
+    const scoredIds = new Set(metrics.scoredAttemptIds)
+    const failures = analyzeFailures(rows.filter(row =&gt; scoredIds.has(row.attempt_id)))
+    return {
+      ...identity, groupId: hash(identity), testName: [...rows].sort((a, b) =&gt; a.start_time.localeCompare(b.start_time) || a.attempt_id.localeCompare(b.attempt_id)).at(-1).test_name, observedNames: unique(rows.map(row =&gt; row.test_name)),
+      ...metrics, ...calculateRisk(metrics), failures,
+      recommendations: generateRecommendations(metrics, failures, identity),
+      firstSeen: rows.map(row =&gt; row.start_time).sort()[0], lastSeen: rows.map(row =&gt; row.end_time).sort().at(-1),
+      appVersions: unique(rows.map(row =&gt; row.app_version)), testVersions: unique(rows.map(row =&gt; row.test_version)),
+      campaignIds: unique(rows.map(row =&gt; membership.get(row.attempt_id)).filter(Boolean)),
+      runIds: unique(rows.map(row =&gt; row.run_id)), attemptIds: rows.map(row =&gt; row.attempt_id).sort(),
+      environmentFingerprints: unique(rows.map(row =&gt; hash(row.environment))),
+      artifacts: rows.filter(row =&gt; row.trace_path || row.screenshot_path).map(row =&gt; ({ attemptId: row.attempt_id, tracePath: row.trace_path, screenshotPath: row.screenshot_path })),
+    }
+  }).sort((a, b) =&gt; a.cohort.localeCompare(b.cohort) || (b.riskScore ?? -1) - (a.riskScore ?? -1) || a.testId.localeCompare(b.testId) || a.groupId.localeCompare(b.groupId))
+  return {
+    reportVersion: 1, analysisId, generatedAt, model: RISK_MODEL,
+    source: { recordCount: records.length, recordsSha256: hash(records), campaignManifestsSha256: hash(campaigns) },
+    selection: { excluded, acceptedAttempts: tests.reduce((sum, test) =&gt; sum + test.attemptCount, 0),
+      ordinaryGroups: tests.filter(test =&gt; test.cohort === &#x27;ordinary&#x27;).length,
+      experimentGroups: tests.filter(test =&gt; test.cohort === &#x27;verified-experiment&#x27;).length },
+    limitations: [
+      &#x27;Sprint 6 controlled healing evaluations are excluded here; use their dedicated verified evaluation manifests.&#x27;,
+      &#x27;Retrospective heuristic priority score; not a predicted failure probability or a validated ML model.&#x27;,
+      &#x27;Locator volatility is the fraction of executions affected by observed locator failures, not measured DOM or locator revision frequency.&#x27;,
+      &#x27;Ordinary means no experiment metadata; legacy records cannot prove the absence of injected faults.&#x27;,
+      &#x27;Scores aggregate available versions and environments within each identity; inspect provenance before comparing results.&#x27;,
+      &#x27;No recency weighting or statistical confidence claim; LIMITED_HISTORY means fewer than 10 scored executions.&#x27;,
+      &#x27;Skipped, interrupted, incomplete retry chains and expected non-pass tests are excluded from scored execution metrics.&#x27;,
+    ],
+    runErrors: records.filter(row =&gt; row.record_type === &#x27;RUN_ERROR&#x27;).map(row =&gt; ({ attemptId: row.attempt_id, runId: row.run_id, failureType: row.failure_type, message: row.error_message })),
+    tests,
+  }
+}
+
+export function reportCSV(report) {
+  const columns = [&#x27;groupId&#x27;, &#x27;testId&#x27;, &#x27;testName&#x27;, &#x27;suiteName&#x27;, &#x27;browser&#x27;, &#x27;projectName&#x27;, &#x27;cohort&#x27;, &#x27;healingMode&#x27;, &#x27;experimentId&#x27;, &#x27;faultVariant&#x27;,
+    &#x27;scenarioVariant&#x27;, &#x27;mutationVersion&#x27;, &#x27;scoredExecutionCount&#x27;, &#x27;failureRate&#x27;, &#x27;stabilityScore&#x27;, &#x27;retryCost&#x27;, &#x27;retryRate&#x27;, &#x27;locatorVolatility&#x27;, &#x27;riskScore&#x27;, &#x27;riskLevel&#x27;, &#x27;evidence&#x27;, &#x27;recommendations&#x27;]
+  const cell = value =&gt; {
+    const text = value == null ? &#x27;&#x27; : typeof value === &#x27;object&#x27; ? JSON.stringify(value) : String(value)
+    return /[&quot;,\r\n]/.test(text) ? `&quot;${text.replaceAll(&#x27;&quot;&#x27;, &#x27;&quot;&quot;&#x27;)}&quot;` : text
+  }
+  return [columns.join(&#x27;,&#x27;), ...report.tests.map(test =&gt; columns.map(key =&gt; cell(test[key])).join(&#x27;,&#x27;))].join(&#x27;\r\n&#x27;) + &#x27;\r\n&#x27;
+}
+
+export function generateIntelligenceReport({ directory = process.env.TELEMETRY_DIR || path.join(PROJECT_ROOT, &#x27;dataset&#x27;) } = {}) {
+  const store = new HistoryStore(directory)
+  const records = store.validate()
+  const report = buildIntelligenceReport(records, loadCampaigns(directory))
+  report.source.intelligenceCodeSha256 = hash([&#x27;metrics.js&#x27;, &#x27;riskCalculator.js&#x27;, &#x27;failureAnalyzer.js&#x27;, &#x27;recommendationEngine.js&#x27;, &#x27;intelligenceReport.js&#x27;]
+    .map(file =&gt; [file, fs.readFileSync(new URL(file, import.meta.url), &#x27;utf8&#x27;)]))
+  const root = path.join(directory, &#x27;intelligence&#x27;)
+  const output = path.join(root, report.analysisId)
+  fs.mkdirSync(output, { recursive: true })
+  const json = JSON.stringify(report, null, 2) + &#x27;\n&#x27;
+  const csv = reportCSV(report)
+  atomicWrite(path.join(output, &#x27;intelligence-report.json&#x27;), json)
+  atomicWrite(path.join(output, &#x27;test-intelligence.csv&#x27;), csv)
+  // Publish one pointer only after both immutable snapshot files are complete.
+  atomicWrite(path.join(root, &#x27;latest.json&#x27;), JSON.stringify({ analysisId: report.analysisId,
+    json: `${report.analysisId}/intelligence-report.json`, csv: `${report.analysisId}/test-intelligence.csv`,
+    jsonSha256: createHash(&#x27;sha256&#x27;).update(json).digest(&#x27;hex&#x27;), csvSha256: createHash(&#x27;sha256&#x27;).update(csv).digest(&#x27;hex&#x27;),
+  }, null, 2) + &#x27;\n&#x27;)
+  return { report, output }
+}
+
+if (process.argv[1] &amp;&amp; import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  try {
+    const { report, output } = generateIntelligenceReport()
+    console.log(JSON.stringify({ output, source: report.source, selection: report.selection }, null, 2))
+  } catch (error) {
+    console.error(`Intelligence report failed: ${error.message}`)
+    process.exitCode = 1
+  }
+}
+</code></pre>
+<h2 id="automation/package.json">automation/package.json</h2><pre><code>{
+  &quot;name&quot;: &quot;predictive-test-automation&quot;,
+  &quot;version&quot;: &quot;1.0.0&quot;,
+  &quot;private&quot;: true,
+  &quot;type&quot;: &quot;module&quot;,
+  &quot;engines&quot;: {
+    &quot;node&quot;: &quot;&gt;=22&quot;
+  },
+  &quot;scripts&quot;: {
+    &quot;test&quot;: &quot;playwright test&quot;,
+    &quot;test:list&quot;: &quot;playwright test --list&quot;,
+    &quot;test:headed&quot;: &quot;playwright test --headed&quot;,
+    &quot;test:ui&quot;: &quot;playwright test --ui&quot;,
+    &quot;test:debug&quot;: &quot;playwright test --debug&quot;,
+    &quot;report&quot;: &quot;playwright show-report reports/html&quot;,
+    &quot;browsers:install&quot;: &quot;playwright install chromium&quot;,
+    &quot;test:telemetry&quot;: &quot;node --test telemetry/telemetry.test.js&quot;,
+    &quot;telemetry:validate&quot;: &quot;node telemetry/validate-history.js&quot;,
+    &quot;telemetry:migrate&quot;: &quot;node telemetry/migrate-history.js&quot;,
+    &quot;experiments&quot;: &quot;node experiments/run.js&quot;,
+    &quot;experiments:list&quot;: &quot;playwright test --config experiments/playwright.config.js --list&quot;,
+    &quot;experiments:inspect&quot;: &quot;node experiments/inspect.js&quot;,
+    &quot;experiments:report&quot;: &quot;playwright show-report reports/experiments/html&quot;,
+    &quot;test:experiments&quot;: &quot;node --test experiments/experiment.test.js&quot;,
+    &quot;intelligence&quot;: &quot;node intelligence/intelligenceReport.js&quot;,
+    &quot;test:intelligence&quot;: &quot;node --test intelligence/intelligence.test.js&quot;,
+    &quot;test:healing&quot;: &quot;node --test healing/healing.test.js&quot;,
+    &quot;healing:evaluate&quot;: &quot;node healing/evaluation/run.js&quot;,
+    &quot;healing:report&quot;: &quot;playwright show-report reports/healing/html&quot;,
+    &quot;test:healing:browser&quot;: &quot;playwright test --config healing/engine.playwright.config.js&quot;
+  },
+  &quot;devDependencies&quot;: {
+    &quot;@playwright/test&quot;: &quot;1.64.1&quot;
+  }
+}
+</code></pre>
+<h2 id="automation/pages/CartPage.js">automation/pages/CartPage.js</h2><pre><code>export class CartPage {
+  constructor(page) {
+    this.page = page
+    this.heading = page.getByRole(&#x27;heading&#x27;, { name: &#x27;Your cart&#x27;, exact: true })
+    this.items = page.getByRole(&#x27;article&#x27;)
+    this.total = page.getByRole(&#x27;heading&#x27;, { name: /^Total:/ })
+    this.emptyMessage = page.getByText(&#x27;Your cart is empty.&#x27;, { exact: true })
+    this.checkoutLink = page.getByRole(&#x27;link&#x27;, { name: &#x27;Proceed to checkout&#x27;, exact: true })
+  }
+
+  item(name) {
+    return this.page.getByRole(&#x27;article&#x27;, { name, exact: true })
+  }
+
+  quantity(name) {
+    return this.item(name).getByRole(&#x27;spinbutton&#x27;, { name: `Quantity for ${name}`, exact: true })
+  }
+
+  increaseButton(name) {
+    return this.item(name).getByRole(&#x27;button&#x27;, { name: `Increase quantity of ${name}`, exact: true })
+  }
+
+  decreaseButton(name) {
+    return this.item(name).getByRole(&#x27;button&#x27;, { name: `Decrease quantity of ${name}`, exact: true })
+  }
+
+  async increase(name) {
+    await this.increaseButton(name).click()
+  }
+
+  async decrease(name) {
+    await this.decreaseButton(name).click()
+  }
+
+  async remove(name) {
+    await this.item(name).getByRole(&#x27;button&#x27;, { name: `Remove ${name}`, exact: true }).click()
+  }
+
+  async openCheckout({ healing, reference, validate } = {}) {
+    if (healing) return healing.perform({
+      descriptor: { strategy: &#x27;role&#x27;, role: &#x27;link&#x27;, value: &#x27;Proceed to checkout&#x27; }, reference, validate,
+    })
+    await this.checkoutLink.click()
+  }
+}
+</code></pre>
+<h2 id="automation/pages/CheckoutPage.js">automation/pages/CheckoutPage.js</h2><pre><code>export class CheckoutPage {
+  constructor(page) {
+    this.page = page
+    this.heading = page.getByRole(&#x27;heading&#x27;, { name: &#x27;Checkout&#x27;, exact: true })
+    this.fullName = page.getByRole(&#x27;textbox&#x27;, { name: &#x27;Full Name&#x27;, exact: true })
+    this.email = page.getByRole(&#x27;textbox&#x27;, { name: &#x27;Email&#x27;, exact: true })
+    this.address = page.getByRole(&#x27;textbox&#x27;, { name: &#x27;Address&#x27;, exact: true })
+    this.couponInput = page.getByRole(&#x27;textbox&#x27;, { name: &#x27;Coupon code&#x27;, exact: true })
+    this.applyCouponButton = page.getByRole(&#x27;button&#x27;, { name: &#x27;Apply coupon&#x27;, exact: true })
+    this.placeOrderButton = page.getByRole(&#x27;button&#x27;, { name: &#x27;Place order&#x27;, exact: true })
+    this.alerts = page.getByRole(&#x27;alert&#x27;)
+    this.couponStatus = page.getByRole(&#x27;status&#x27;)
+    this.subtotal = page.locator(&#x27;p&#x27;).filter({ hasText: /^Subtotal:/ }).locator(&#x27;strong&#x27;)
+    this.discount = page.locator(&#x27;p&#x27;).filter({ hasText: /^Discount:/ }).locator(&#x27;strong&#x27;)
+    this.total = page.locator(&#x27;p&#x27;).filter({ hasText: /^Total:/ }).locator(&#x27;strong&#x27;)
+    // Confirmation is part of the checkout workflow; no sixth page object is needed.
+    this.successMessage = page.getByRole(&#x27;status&#x27;).filter({ hasText: &#x27;Your demo order was placed successfully.&#x27; })
+    this.orderNumber = page.getByText(/^Order number: ORD-/)
+    this.confirmationTotal = page.getByRole(&#x27;heading&#x27;, { name: /^Total:/ })
+    this.confirmationItems = page.getByRole(&#x27;listitem&#x27;)
+    this.historyLink = page.getByRole(&#x27;link&#x27;, { name: &#x27;View order history&#x27;, exact: true })
+    this.continueShoppingLink = page.getByRole(&#x27;link&#x27;, { name: &#x27;Continue Shopping&#x27;, exact: true })
+  }
+
+  async fillCustomer({ name, email, address }) {
+    await this.fullName.fill(name)
+    await this.email.fill(email)
+    await this.address.fill(address)
+  }
+
+  async applyCoupon(code, { healing, reference, validate } = {}) {
+    await this.couponInput.fill(code)
+    if (healing) return healing.perform({
+      descriptor: { strategy: &#x27;role&#x27;, role: &#x27;button&#x27;, value: &#x27;Apply coupon&#x27; }, reference, validate,
+    })
+    await this.applyCouponButton.click()
+  }
+
+  async submit({ healing, reference, validate } = {}) {
+    if (healing) return healing.perform({
+      descriptor: { strategy: &#x27;role&#x27;, role: &#x27;button&#x27;, value: &#x27;Place order&#x27;, includeHidden: true }, reference, validate,
+    })
+    await this.placeOrderButton.click()
+  }
+
+  async readOrderNumber() {
+    const text = await this.orderNumber.innerText()
+    return text.replace(&#x27;Order number: &#x27;, &#x27;&#x27;).trim()
+  }
+
+  async openHistory() {
+    await this.historyLink.click()
+  }
+
+  async continueShopping() {
+    await this.continueShoppingLink.click()
+  }
+}
+</code></pre>
+<h2 id="automation/telemetry/TelemetryReporter.js">automation/telemetry/TelemetryReporter.js</h2><pre><code>import fs from &#x27;node:fs&#x27;
+import { readHealingResult } from &#x27;../healing/healingReporter.js&#x27;
+import path from &#x27;node:path&#x27;
+import { randomUUID } from &#x27;node:crypto&#x27;
+import { fileURLToPath } from &#x27;node:url&#x27;
+import { HistoryStore, atomicWrite } from &#x27;./history.js&#x27;
+import { validateRecord } from &#x27;./schema.js&#x27;
+import { STATUS_MAP, classifyFailure, failurePhase } from &#x27;./taxonomy.js&#x27;
+import { createRunMetadata, testIdentity, describePath, experimentMetadata } from &#x27;./metadata.js&#x27;
+
+export default class TelemetryReporter {
+  constructor(options = {}) {
+    this.directory = path.resolve(process.env.TELEMETRY_DIR || options.directory || fileURLToPath(new URL(&#x27;../../dataset&#x27;, import.meta.url)))
+    this.store = new HistoryStore(this.directory)
+    this.attempts = new WeakMap()
+    this.completed = 0
+    this.runErrors = 0
+    this.listOnly = process.argv.includes(&#x27;--list&#x27;)
+  }
+
+  printsToStdio() { return false }
+
+  guard(action) {
+    if (this.listOnly || this.fatalError) return
+    try { action() }
+    catch (error) {
+      this.fatalError = error
+      process.stderr.write(`[telemetry] ${error.message}\n`)
+    }
+  }
+
+  ensureRun(config = { workers: 0 }) {
+    if (this.metadata) return
+    this.metadata = createRunMetadata(config)
+    this.manifest = path.join(this.directory, &#x27;runs&#x27;, this.metadata.run_id, &#x27;run.json&#x27;)
+    this.store.validate()
+    this.writeManifest(&#x27;RUNNING&#x27;)
+  }
+
+  writeManifest(status, extra = {}) {
+    atomicWrite(this.manifest, JSON.stringify({ ...this.metadata,
+      status, expected_tests: this.expectedTests ?? 0,
+      completed_attempts: this.completed, run_errors: this.runErrors,
+      telemetry_error: this.fatalError?.message ?? null, ...extra,
+    }, null, 2) + &#x27;\n&#x27;)
+  }
+
+  onBegin(config, suite) {
+    this.guard(() =&gt; {
+      this.expectedTests = suite.allTests().length
+      this.ensureRun(config)
+      const identities = new Map()
+      for (const test of suite.allTests()) {
+        const id = testIdentity(test)
+        const identity = `${test.location.file}::${describePath(test).join(&#x27;::&#x27;)}::${test.title}`
+        if (identities.has(id) &amp;&amp; identities.get(id) !== identity) throw new Error(`Duplicate test_id: ${id}`)
+        identities.set(id, identity)
+      }
+      this.writeManifest(&#x27;RUNNING&#x27;)
+    })
+  }
+
+  attempt(result) {
+    let attempt = this.attempts.get(result)
+    if (!attempt) {
+      attempt = { id: randomUUID(), failedStep: null }
+      this.attempts.set(result, attempt)
+    }
+    return attempt
+  }
+
+  onTestBegin(_test, result) {
+    this.guard(() =&gt; { this.attempt(result) })
+  }
+
+  onStepEnd(_test, result, step) {
+    this.guard(() =&gt; {
+      const attempt = this.attempt(result)
+      if (step.error &amp;&amp; !attempt.failedStep) {
+        attempt.failedStep = { title: step.title, category: step.category, phase: failurePhase(step) }
+      }
+    })
+  }
+
+  readRuntimeErrors(attachments) {
+    const attachment = attachments.find(item =&gt; item.name === &#x27;telemetry-runtime-errors&#x27;)
+    if (!attachment) return []
+    return JSON.parse(attachment.body ? attachment.body.toString(&#x27;utf8&#x27;) : fs.readFileSync(attachment.path, &#x27;utf8&#x27;))
+  }
+
+  archiveArtifacts(attachments, attemptId) {
+    const result = { trace_path: null, screenshot_path: null }
+    for (const [key, matches, extension] of [
+      [&#x27;trace_path&#x27;, item =&gt; item.name === &#x27;trace&#x27;, &#x27;.zip&#x27;],
+      [&#x27;screenshot_path&#x27;, item =&gt; item.name === &#x27;screenshot&#x27; &amp;&amp; item.contentType.startsWith(&#x27;image/&#x27;), &#x27;.png&#x27;],
+    ]) {
+      const attachment = attachments.find(matches)
+      if (!attachment) continue
+      const relative = `artifacts/${this.metadata.run_id}/${attemptId}/${key === &#x27;trace_path&#x27; ? &#x27;trace&#x27; : &#x27;screenshot&#x27;}${extension}`
+      const destination = path.join(this.directory, relative)
+      fs.mkdirSync(path.dirname(destination), { recursive: true })
+      if (attachment.path) fs.copyFileSync(attachment.path, destination)
+      else if (attachment.body) fs.writeFileSync(destination, attachment.body)
+      else throw new Error(`Artifact ${attachment.name} has no content`)
+      result[key] = relative
+    }
+    return result
+  }
+
+  onTestEnd(test, result) {
+    this.guard(() =&gt; {
+      this.ensureRun()
+      const attempt = this.attempt(result)
+      const annotations = result.annotations ?? test.annotations ?? []
+      const status = STATUS_MAP[result.status]
+      const errors = result.errors?.length ? result.errors : result.error ? [result.error] : []
+      const runtimeErrors = this.readRuntimeErrors(result.attachments)
+      const phase = attempt.failedStep?.phase ?? &#x27;test&#x27;
+      const classification = classifyFailure({ status, errors, phase,
+        category: attempt.failedStep?.category, runtimeErrors,
+        annotation: annotations.findLast(item =&gt; item.type === &#x27;failure_type&#x27;)?.description,
+      })
+      const project = test.parent.project()
+      const start = result.startTime.toISOString()
+      const row = {
+        schema_version: 3, record_type: &#x27;TEST_ATTEMPT&#x27;,
+        ...this.metadata,
+        attempt_id: attempt.id,
+        test_id: testIdentity(test), test_name: test.title,
+        suite_name: describePath(test).join(&#x27; &gt; &#x27;) || path.basename(test.location.file),
+        browser: project?.use.browserName || project?.use.defaultBrowserType || &#x27;chromium&#x27;,
+        status, failure_type: classification.type,
+        duration_ms: result.duration, retry_count: result.retry,
+        start_time: start, end_time: new Date(result.startTime.getTime() + result.duration).toISOString(),
+        trace_path: null, screenshot_path: null,
+        notes: [
+          ...annotations.filter(item =&gt; item.type === &#x27;telemetry_note&#x27;).map(item =&gt; item.description ?? &#x27;&#x27;),
+          ...(classification.source === &#x27;HEURISTIC&#x27; ? [&#x27;Observed failure symptom; heuristic classification is not ground-truth root cause.&#x27;] : []),
+          ...(runtimeErrors.length ? [&#x27;Page runtime errors observed; see runtime_errors.&#x27;] : []),
+          ...(attempt.failedStep ? [`Failed step: ${attempt.failedStep.title}`] : []),
+        ].join(&#x27;\n&#x27;),
+        ...experimentMetadata(annotations),
+        ...readHealingResult(result.attachments, status),
+        expected_status: STATUS_MAP[test.expectedStatus],
+        classification_source: classification.source, failure_phase: phase,
+        error_message: errors.map(error =&gt; error.message || error.value || &#x27;&#x27;).join(&#x27;\n&#x27;),
+        error_stack: errors.map(error =&gt; error.stack || &#x27;&#x27;).join(&#x27;\n&#x27;),
+        runtime_errors: runtimeErrors,
+        project_name: project?.name || &#x27;default&#x27;, worker_index: result.workerIndex,
+        repeat_index: test.repeatEachIndex ?? 0,
+      }
+      validateRecord(row)
+      Object.assign(row, this.archiveArtifacts(result.attachments, attempt.id))
+      this.store.append(row)
+      this.completed++
+      this.writeManifest(&#x27;RUNNING&#x27;)
+    })
+  }
+
+  onError(error) {
+    this.guard(() =&gt; {
+      this.ensureRun()
+      const time = new Date().toISOString()
+      const row = {
+        schema_version: 3, record_type: &#x27;RUN_ERROR&#x27;, ...this.metadata,
+        attempt_id: randomUUID(), test_id: &#x27;__RUN__&#x27;, test_name: &#x27;Run-level error&#x27;, suite_name: &#x27;Run lifecycle&#x27;,
+        browser: &#x27;runner&#x27;, status: &#x27;FAIL&#x27;, failure_type: &#x27;SETUP_ENVIRONMENT_FAILURE&#x27;,
+        duration_ms: 0, retry_count: 0, start_time: time, end_time: time,
+        trace_path: null, screenshot_path: null,
+        notes: &#x27;Runner error, not attributed to an individual test. Exclude RUN_ERROR rows from test-attempt modeling.&#x27;,
+        ...experimentMetadata(), ...readHealingResult([], &#x27;FAIL&#x27;), expected_status: &#x27;PASS&#x27;, classification_source: &#x27;HEURISTIC&#x27;, failure_phase: &#x27;run&#x27;,
+        error_message: error.message || error.value || &#x27;Unspecified runner error&#x27;, error_stack: error.stack || &#x27;&#x27;,
+        runtime_errors: [], project_name: &#x27;runner&#x27;, worker_index: -1, repeat_index: 0,
+      }
+      this.store.append(row)
+      this.runErrors++
+      this.writeManifest(&#x27;RUNNING&#x27;)
+    })
+  }
+
+  async onEnd(result) {
+    if (this.listOnly) return
+    this.guard(() =&gt; {
+      this.ensureRun()
+      this.store.validate()
+      this.writeManifest(result.status.toUpperCase(), { end_time: new Date().toISOString() })
+    })
+    if (this.fatalError) {
+      // Playwright swallows reporter exceptions; explicitly fail the runner instead.
+      try { if (this.manifest) this.writeManifest(&#x27;TELEMETRY_ERROR&#x27;) } catch { /* Original error was already printed. */ }
+      return { status: &#x27;failed&#x27; }
+    }
+  }
+}
+</code></pre>
+<h2 id="automation/telemetry/history.js">automation/telemetry/history.js</h2><pre><code>import fs from &#x27;node:fs&#x27;
+import path from &#x27;node:path&#x27;
+import os from &#x27;node:os&#x27;
+import { randomUUID, createHash } from &#x27;node:crypto&#x27;
+import { healingRows, serializeHealingCSV } from &#x27;../healing/healingHistory.js&#x27;
+import { CSV_COLUMNS, LEGACY_COLUMNS, V2_COLUMNS, validateHistory, validateRecord, upgradeRecord } from &#x27;./schema.js&#x27;
+
+export function atomicWrite(file, content) {
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  const temporary = `${file}.${randomUUID()}.tmp`
+  const fd = fs.openSync(temporary, &#x27;wx&#x27;, 0o600)
+  try {
+    fs.writeFileSync(fd, content)
+    fs.fsyncSync(fd)
+  } finally { fs.closeSync(fd) }
+  try { fs.renameSync(temporary, file) }
+  finally { if (fs.existsSync(temporary)) fs.unlinkSync(temporary) }
+}
+
+function csvCell(value) {
+  const text = value === null ? &#x27;&#x27; : typeof value === &#x27;object&#x27; ? JSON.stringify(value) : String(value)
+  return /[&quot;,\r\n]/.test(text) ? `&quot;${text.replaceAll(&#x27;&quot;&#x27;, &#x27;&quot;&quot;&#x27;)}&quot;` : text
+}
+
+export function serializeCSV(records) {
+  const version = records[0]?.schema_version ?? 3
+  if (records.some(record =&gt; record.schema_version !== version)) throw new Error(&#x27;Mixed schema versions require migration&#x27;)
+  const columns = version === 1 ? LEGACY_COLUMNS : version === 2 ? V2_COLUMNS : CSV_COLUMNS
+  return [columns.join(&#x27;,&#x27;), ...records.map(record =&gt; columns.map(column =&gt; csvCell(record[column])).join(&#x27;,&#x27;))].join(&#x27;\r\n&#x27;) + &#x27;\r\n&#x27;
+}
+
+export class HistoryStore {
+  constructor(directory) {
+    this.directory = path.resolve(directory)
+    this.json = path.join(this.directory, &#x27;execution-history.json&#x27;)
+    this.csv = path.join(this.directory, &#x27;test-history.csv&#x27;)
+    this.pending = path.join(this.directory, &#x27;.history-pending.json&#x27;)
+    this.lock = path.join(this.directory, &#x27;.history-lock&#x27;)
+  }
+
+  withLock(action) {
+    fs.mkdirSync(this.directory, { recursive: true })
+    const deadline = Date.now() + 5_000
+    while (true) {
+      try { fs.mkdirSync(this.lock); break }
+      catch (error) {
+        if (error.code !== &#x27;EEXIST&#x27;) throw error
+        let ownerDescription = &#x27;owner metadata unavailable&#x27;
+        try {
+          const owner = JSON.parse(fs.readFileSync(path.join(this.lock, &#x27;owner.json&#x27;), &#x27;utf8&#x27;))
+          ownerDescription = `PID ${owner.pid} on ${owner.hostname}`
+        } catch { /* A writer can be between mkdir and writing owner metadata. */ }
+        if (Date.now() &gt;= deadline) {
+          throw new Error(`History lock held (${ownerDescription}). If a runner crashed, confirm it has exited before removing ${this.lock}; journal recovery runs on the next access.`)
+        }
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20)
+      }
+    }
+    try {
+      fs.writeFileSync(path.join(this.lock, &#x27;owner.json&#x27;), JSON.stringify({ pid: process.pid, hostname: os.hostname() }))
+      return action()
+    } finally { fs.rmSync(this.lock, { recursive: true, force: true }) }
+  }
+
+  writeSnapshot(records) {
+    atomicWrite(this.json, JSON.stringify(records, null, 2) + &#x27;\n&#x27;)
+    atomicWrite(this.csv, serializeCSV(records))
+    if (!records.length || records.every(row =&gt; row.schema_version === 3)) {
+      const rows = healingRows(records)
+      atomicWrite(path.join(this.directory, &#x27;healing-history.json&#x27;), JSON.stringify(rows, null, 2) + &#x27;\n&#x27;)
+      atomicWrite(path.join(this.directory, &#x27;healing-history.csv&#x27;), serializeHealingCSV(rows))
+    }
+  }
+
+  recover() {
+    if (!fs.existsSync(this.pending)) return
+    const records = validateHistory(JSON.parse(fs.readFileSync(this.pending, &#x27;utf8&#x27;)))
+    this.writeSnapshot(records)
+    fs.unlinkSync(this.pending)
+  }
+
+  readUnlocked() {
+    this.recover()
+    if (!fs.existsSync(this.json)) {
+      if (fs.existsSync(this.csv)) throw new Error(&#x27;CSV exists without authoritative JSON history&#x27;)
+      return []
+    }
+    const records = validateHistory(JSON.parse(fs.readFileSync(this.json, &#x27;utf8&#x27;)))
+    if (!fs.existsSync(this.csv) || fs.readFileSync(this.csv, &#x27;utf8&#x27;) !== serializeCSV(records)) {
+      throw new Error(&#x27;JSON and CSV are inconsistent; refusing to overwrite existing history&#x27;)
+    }
+    if (records.every(row =&gt; row.schema_version === 3)) {
+      const rows = healingRows(records)
+      const expected = [[&#x27;healing-history.json&#x27;, JSON.stringify(rows, null, 2) + &#x27;\n&#x27;], [&#x27;healing-history.csv&#x27;, serializeHealingCSV(rows)]]
+      for (const [file, content] of expected) {
+        if (!fs.existsSync(path.join(this.directory, file)) || fs.readFileSync(path.join(this.directory, file), &#x27;utf8&#x27;) !== content) throw new Error(&#x27;Healing history projection is inconsistent; restore the projection from authoritative execution history&#x27;)
+      }
+    }
+    return records
+  }
+
+  append(record) {
+    validateRecord(record)
+    if (record.schema_version !== 3) throw new Error(&#x27;New records must use schema v3&#x27;)
+    return this.withLock(() =&gt; {
+      const records = this.readUnlocked()
+      if (records.some(item =&gt; item.schema_version !== 3)) throw new Error(&#x27;Run npm run telemetry:migrate before appending to legacy schema history&#x27;)
+      const existing = records.find(item =&gt; item.attempt_id === record.attempt_id)
+      if (existing) {
+        if (JSON.stringify(existing) !== JSON.stringify(record)) throw new Error(&#x27;Conflicting duplicate attempt_id&#x27;)
+        return false
+      }
+      records.push(record)
+      // Write-ahead journal repairs interrupted execution/healing JSON/CSV publication on the next access.
+      atomicWrite(this.pending, JSON.stringify(records))
+      this.writeSnapshot(records)
+      fs.unlinkSync(this.pending)
+      return true
+    })
+  }
+
+
+  migrate() {
+    return this.withLock(() =&gt; {
+      const records = this.readUnlocked()
+      if (!records.some(record =&gt; record.schema_version !== 3)) return { migrated: 0, backup: null }
+      const backup = path.join(this.directory, &#x27;migrations&#x27;, randomUUID())
+      fs.mkdirSync(backup, { recursive: true })
+      const from = records[0].schema_version
+      fs.copyFileSync(this.json, path.join(backup, `execution-history.v${from}.json`))
+      fs.copyFileSync(this.csv, path.join(backup, `test-history.v${from}.csv`))
+      const next = records.map(upgradeRecord)
+      atomicWrite(this.pending, JSON.stringify(next))
+      this.writeSnapshot(next)
+      fs.unlinkSync(this.pending)
+      atomicWrite(path.join(backup, &#x27;migration.json&#x27;), JSON.stringify({
+        from, to: 3, count: records.length, migrated_at: new Date().toISOString(),
+        original_sha256: createHash(&#x27;sha256&#x27;).update(fs.readFileSync(path.join(backup, `execution-history.v${from}.json`))).digest(&#x27;hex&#x27;),
+      }, null, 2) + &#x27;\n&#x27;)
+      return { migrated: records.length, backup }
+    })
+  }
+
+  validate() {
+    return this.withLock(() =&gt; {
+      const records = this.readUnlocked()
+      for (const record of records) {
+        for (const key of [&#x27;trace_path&#x27;, &#x27;screenshot_path&#x27;]) {
+          if (record[key] &amp;&amp; !fs.existsSync(path.join(this.directory, record[key]))) throw new Error(`Missing artifact: ${record[key]}`)
+        }
+      }
+      return records
+    })
+  }
+}
+</code></pre>
+<h2 id="automation/telemetry/metadata.js">automation/telemetry/metadata.js</h2><pre><code>import fs from &#x27;node:fs&#x27;
+import path from &#x27;node:path&#x27;
+import os from &#x27;node:os&#x27;
+import { createHash, randomUUID } from &#x27;node:crypto&#x27;
+import { fileURLToPath } from &#x27;node:url&#x27;
+import { createRequire } from &#x27;node:module&#x27;
+import { execFileSync } from &#x27;node:child_process&#x27;
+
+const require = createRequire(import.meta.url)
+export const AUTOMATION_ROOT = fileURLToPath(new URL(&#x27;..&#x27;, import.meta.url))
+export const PROJECT_ROOT = path.dirname(AUTOMATION_ROOT)
+export const EXPERIMENT_FIELDS = Object.freeze([
+  &#x27;locator_mutation&#x27;, &#x27;fault_variant&#x27;, &#x27;experiment_id&#x27;, &#x27;scenario_variant&#x27;,
+  &#x27;fault_type&#x27;, &#x27;emulated&#x27;, &#x27;injected_at&#x27;, &#x27;mutation_version&#x27;, &#x27;expected_failure_type&#x27;, &#x27;injection_verified&#x27;,
+])
+
+function sourceHash(root, entries) {
+  const hash = createHash(&#x27;sha256&#x27;)
+  function visit(relative) {
+    const file = path.join(root, relative)
+    if (!fs.existsSync(file)) return
+    const stat = fs.lstatSync(file)
+    if (stat.isDirectory()) for (const name of fs.readdirSync(file).sort()) visit(path.join(relative, name))
+    else if (stat.isFile()) hash.update(relative.split(path.sep).join(&#x27;/&#x27;) + &#x27;\0&#x27;).update(fs.readFileSync(file)).update(&#x27;\0&#x27;)
+  }
+  for (const entry of [...entries].sort()) visit(entry)
+  return hash.digest(&#x27;hex&#x27;)
+}
+
+export function createRunMetadata(config) {
+  const automationPackage = JSON.parse(fs.readFileSync(path.join(AUTOMATION_ROOT, &#x27;package.json&#x27;), &#x27;utf8&#x27;))
+  const appPackage = JSON.parse(fs.readFileSync(path.join(PROJECT_ROOT, &#x27;frontend/package.json&#x27;), &#x27;utf8&#x27;))
+  let commit = &#x27;unknown&#x27;
+  try { commit = execFileSync(&#x27;git&#x27;, [&#x27;rev-parse&#x27;, &#x27;HEAD&#x27;], { cwd: PROJECT_ROOT, encoding: &#x27;utf8&#x27;, stdio: [&#x27;ignore&#x27;, &#x27;pipe&#x27;, &#x27;ignore&#x27;] }).trim() }
+  catch { /* Source fingerprints still identify uncommitted or non-Git checkouts. */ }
+  return {
+    run_id: randomUUID(),
+    timestamp: new Date().toISOString(),
+    app_version: `${appPackage.version}+sha256:${sourceHash(path.join(PROJECT_ROOT, &#x27;frontend&#x27;), [&#x27;src&#x27;, &#x27;package.json&#x27;, &#x27;package-lock.json&#x27;, &#x27;vite.config.js&#x27;, &#x27;index.html&#x27;, &#x27;public&#x27;])}`,
+    test_version: `${automationPackage.version}+sha256:${sourceHash(AUTOMATION_ROOT, [&#x27;pages&#x27;, &#x27;tests&#x27;, &#x27;fixtures&#x27;, &#x27;utils&#x27;, &#x27;telemetry&#x27;, &#x27;experiments&#x27;, &#x27;healing&#x27;, &#x27;playwright.config.js&#x27;, &#x27;package.json&#x27;, &#x27;package-lock.json&#x27;])}`,
+    framework_version: automationPackage.version,
+    playwright_version: require(&#x27;@playwright/test/package.json&#x27;).version,
+    environment: {
+      node_version: process.version, platform: process.platform, architecture: process.arch,
+      os_release: os.release(), hostname: os.hostname(), ci: Boolean(process.env.CI),
+      workers: config.workers, git_commit: commit,
+    },
+  }
+}
+
+export function testIdentity(test) {
+  const explicit = test.title.match(/^([A-Z][A-Z0-9_]*-\d+)\b/)
+  if (explicit) return explicit[1]
+  // Fallback is deterministic, but renaming/moving an unnumbered test changes this ID.
+  const key = [path.relative(PROJECT_ROOT, test.location.file).split(path.sep).join(&#x27;/&#x27;), ...describePath(test), test.title].join(&#x27;::&#x27;)
+  return `AUTO-${createHash(&#x27;sha256&#x27;).update(key).digest(&#x27;hex&#x27;)}`
+}
+
+export function describePath(test) {
+  const names = []
+  for (let suite = test.parent; suite; suite = suite.parent) if (suite.type === &#x27;describe&#x27;) names.unshift(suite.title)
+  return names
+}
+
+export function experimentMetadata(annotations = []) {
+  const result = Object.fromEntries(EXPERIMENT_FIELDS.map(field =&gt; [field,
+    annotations.findLast(annotation =&gt; annotation.type === field)?.description ?? process.env[field.toUpperCase()] ?? &#x27;&#x27;,
+  ]))
+  for (const key of [&#x27;emulated&#x27;, &#x27;injection_verified&#x27;]) {
+    if (![&#x27;&#x27;, &#x27;true&#x27;, &#x27;false&#x27;].includes(result[key])) throw new Error(`${key} must be true or false`)
+    result[key] = result[key] === &#x27;true&#x27;
+  }
+  result.injected_at ||= null
+  result.expected_failure_type ||= null
+  return result
+}
+</code></pre>
+<h2 id="automation/telemetry/record.schema.json">automation/telemetry/record.schema.json</h2><pre><code>{
+  &quot;$schema&quot;: &quot;https://json-schema.org/draft/2020-12/schema&quot;,
+  &quot;title&quot;: &quot;Playwright execution telemetry v3&quot;,
+  &quot;type&quot;: &quot;object&quot;,
+  &quot;additionalProperties&quot;: false,
+  &quot;properties&quot;: {
+    &quot;schema_version&quot;: {
+      &quot;const&quot;: 3
+    },
+    &quot;record_type&quot;: {
+      &quot;enum&quot;: [
+        &quot;TEST_ATTEMPT&quot;,
+        &quot;RUN_ERROR&quot;
+      ]
+    },
+    &quot;run_id&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;pattern&quot;: &quot;^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$&quot;
+    },
+    &quot;attempt_id&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;pattern&quot;: &quot;^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$&quot;
+    },
+    &quot;test_id&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;test_name&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;suite_name&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;browser&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;status&quot;: {
+      &quot;enum&quot;: [
+        &quot;PASS&quot;,
+        &quot;FAIL&quot;,
+        &quot;TIMED_OUT&quot;,
+        &quot;SKIPPED&quot;,
+        &quot;INTERRUPTED&quot;
+      ]
+    },
+    &quot;failure_type&quot;: {
+      &quot;enum&quot;: [
+        null,
+        &quot;LOCATOR_NOT_FOUND&quot;,
+        &quot;LOCATOR_AMBIGUOUS&quot;,
+        &quot;ACTIONABILITY_FAILURE&quot;,
+        &quot;ASSERTION_MISMATCH&quot;,
+        &quot;STATE_CONSISTENCY_FAILURE&quot;,
+        &quot;APPLICATION_RUNTIME_ERROR&quot;,
+        &quot;SETUP_ENVIRONMENT_FAILURE&quot;,
+        &quot;UNKNOWN&quot;
+      ]
+    },
+    &quot;duration_ms&quot;: {
+      &quot;type&quot;: &quot;number&quot;,
+      &quot;minimum&quot;: 0
+    },
+    &quot;retry_count&quot;: {
+      &quot;type&quot;: &quot;integer&quot;,
+      &quot;minimum&quot;: 0
+    },
+    &quot;start_time&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;format&quot;: &quot;date-time&quot;
+    },
+    &quot;end_time&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;format&quot;: &quot;date-time&quot;
+    },
+    &quot;app_version&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;test_version&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;trace_path&quot;: {
+      &quot;type&quot;: [
+        &quot;string&quot;,
+        &quot;null&quot;
+      ],
+      &quot;pattern&quot;: &quot;^artifacts/[A-Za-z0-9_./-]+$&quot;
+    },
+    &quot;screenshot_path&quot;: {
+      &quot;type&quot;: [
+        &quot;string&quot;,
+        &quot;null&quot;
+      ],
+      &quot;pattern&quot;: &quot;^artifacts/[A-Za-z0-9_./-]+$&quot;
+    },
+    &quot;notes&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;framework_version&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;playwright_version&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;timestamp&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;format&quot;: &quot;date-time&quot;
+    },
+    &quot;environment&quot;: {
+      &quot;type&quot;: &quot;object&quot;,
+      &quot;additionalProperties&quot;: false,
+      &quot;required&quot;: [
+        &quot;node_version&quot;,
+        &quot;platform&quot;,
+        &quot;architecture&quot;,
+        &quot;os_release&quot;,
+        &quot;hostname&quot;,
+        &quot;ci&quot;,
+        &quot;workers&quot;,
+        &quot;git_commit&quot;
+      ],
+      &quot;properties&quot;: {
+        &quot;node_version&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;minLength&quot;: 1
+        },
+        &quot;platform&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;minLength&quot;: 1
+        },
+        &quot;architecture&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;minLength&quot;: 1
+        },
+        &quot;os_release&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;minLength&quot;: 1
+        },
+        &quot;hostname&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;minLength&quot;: 1
+        },
+        &quot;ci&quot;: {
+          &quot;type&quot;: &quot;boolean&quot;
+        },
+        &quot;workers&quot;: {
+          &quot;type&quot;: &quot;integer&quot;,
+          &quot;minimum&quot;: 0
+        },
+        &quot;git_commit&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;minLength&quot;: 1
+        }
+      }
+    },
+    &quot;locator_mutation&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;fault_variant&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;experiment_id&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;scenario_variant&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;fault_type&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;emulated&quot;: {
+      &quot;type&quot;: &quot;boolean&quot;
+    },
+    &quot;injected_at&quot;: {
+      &quot;type&quot;: [
+        &quot;string&quot;,
+        &quot;null&quot;
+      ],
+      &quot;format&quot;: &quot;date-time&quot;
+    },
+    &quot;mutation_version&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;expected_failure_type&quot;: {
+      &quot;enum&quot;: [
+        null,
+        &quot;LOCATOR_NOT_FOUND&quot;,
+        &quot;LOCATOR_AMBIGUOUS&quot;,
+        &quot;ACTIONABILITY_FAILURE&quot;,
+        &quot;ASSERTION_MISMATCH&quot;,
+        &quot;STATE_CONSISTENCY_FAILURE&quot;,
+        &quot;APPLICATION_RUNTIME_ERROR&quot;,
+        &quot;SETUP_ENVIRONMENT_FAILURE&quot;,
+        &quot;UNKNOWN&quot;
+      ]
+    },
+    &quot;injection_verified&quot;: {
+      &quot;type&quot;: &quot;boolean&quot;
+    },
+    &quot;expected_status&quot;: {
+      &quot;enum&quot;: [
+        &quot;PASS&quot;,
+        &quot;FAIL&quot;,
+        &quot;TIMED_OUT&quot;,
+        &quot;SKIPPED&quot;,
+        &quot;INTERRUPTED&quot;
+      ]
+    },
+    &quot;classification_source&quot;: {
+      &quot;enum&quot;: [
+        &quot;NONE&quot;,
+        &quot;ANNOTATION&quot;,
+        &quot;HEURISTIC&quot;,
+        &quot;UNKNOWN&quot;
+      ]
+    },
+    &quot;failure_phase&quot;: {
+      &quot;enum&quot;: [
+        &quot;test&quot;,
+        &quot;setup&quot;,
+        &quot;teardown&quot;,
+        &quot;run&quot;
+      ]
+    },
+    &quot;error_message&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;error_stack&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;runtime_errors&quot;: {
+      &quot;type&quot;: &quot;array&quot;,
+      &quot;items&quot;: {
+        &quot;type&quot;: &quot;string&quot;
+      }
+    },
+    &quot;project_name&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;worker_index&quot;: {
+      &quot;type&quot;: &quot;integer&quot;,
+      &quot;minimum&quot;: -1
+    },
+    &quot;repeat_index&quot;: {
+      &quot;type&quot;: &quot;integer&quot;,
+      &quot;minimum&quot;: 0
+    },
+    &quot;healing_mode&quot;: {
+      &quot;enum&quot;: [
+        &quot;NONE&quot;,
+        &quot;BASELINE&quot;,
+        &quot;ADAPTIVE&quot;
+      ]
+    },
+    &quot;healing_attempted&quot;: {
+      &quot;type&quot;: &quot;boolean&quot;
+    },
+    &quot;healing_successful&quot;: {
+      &quot;type&quot;: &quot;boolean&quot;
+    },
+    &quot;original_locator&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;candidate_locator&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;candidate_count&quot;: {
+      &quot;type&quot;: &quot;integer&quot;,
+      &quot;minimum&quot;: 0
+    },
+    &quot;confidence_score&quot;: {
+      &quot;type&quot;: &quot;number&quot;,
+      &quot;minimum&quot;: 0,
+      &quot;maximum&quot;: 1
+    },
+    &quot;healing_duration_ms&quot;: {
+      &quot;type&quot;: &quot;number&quot;,
+      &quot;minimum&quot;: 0
+    },
+    &quot;healing_reason&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;original_failure_type&quot;: {
+      &quot;enum&quot;: [
+        null,
+        &quot;LOCATOR_NOT_FOUND&quot;,
+        &quot;LOCATOR_AMBIGUOUS&quot;,
+        &quot;ACTIONABILITY_FAILURE&quot;,
+        &quot;ASSERTION_MISMATCH&quot;,
+        &quot;STATE_CONSISTENCY_FAILURE&quot;,
+        &quot;APPLICATION_RUNTIME_ERROR&quot;,
+        &quot;SETUP_ENVIRONMENT_FAILURE&quot;,
+        &quot;UNKNOWN&quot;
+      ]
+    },
+    &quot;healing_events&quot;: {
+      &quot;type&quot;: &quot;array&quot;,
+      &quot;items&quot;: {
+        &quot;type&quot;: &quot;object&quot;
+      }
+    }
+  },
+  &quot;required&quot;: [
+    &quot;schema_version&quot;,
+    &quot;record_type&quot;,
+    &quot;run_id&quot;,
+    &quot;attempt_id&quot;,
+    &quot;test_id&quot;,
+    &quot;test_name&quot;,
+    &quot;suite_name&quot;,
+    &quot;browser&quot;,
+    &quot;status&quot;,
+    &quot;failure_type&quot;,
+    &quot;duration_ms&quot;,
+    &quot;retry_count&quot;,
+    &quot;start_time&quot;,
+    &quot;end_time&quot;,
+    &quot;app_version&quot;,
+    &quot;test_version&quot;,
+    &quot;trace_path&quot;,
+    &quot;screenshot_path&quot;,
+    &quot;notes&quot;,
+    &quot;framework_version&quot;,
+    &quot;playwright_version&quot;,
+    &quot;timestamp&quot;,
+    &quot;environment&quot;,
+    &quot;locator_mutation&quot;,
+    &quot;fault_variant&quot;,
+    &quot;experiment_id&quot;,
+    &quot;scenario_variant&quot;,
+    &quot;fault_type&quot;,
+    &quot;emulated&quot;,
+    &quot;injected_at&quot;,
+    &quot;mutation_version&quot;,
+    &quot;expected_failure_type&quot;,
+    &quot;injection_verified&quot;,
+    &quot;expected_status&quot;,
+    &quot;classification_source&quot;,
+    &quot;failure_phase&quot;,
+    &quot;error_message&quot;,
+    &quot;error_stack&quot;,
+    &quot;runtime_errors&quot;,
+    &quot;project_name&quot;,
+    &quot;worker_index&quot;,
+    &quot;repeat_index&quot;,
+    &quot;healing_mode&quot;,
+    &quot;healing_attempted&quot;,
+    &quot;healing_successful&quot;,
+    &quot;original_locator&quot;,
+    &quot;candidate_locator&quot;,
+    &quot;candidate_count&quot;,
+    &quot;confidence_score&quot;,
+    &quot;healing_duration_ms&quot;,
+    &quot;healing_reason&quot;,
+    &quot;original_failure_type&quot;,
+    &quot;healing_events&quot;
+  ]
+}
+</code></pre>
+<h2 id="automation/telemetry/record.v2.schema.json">automation/telemetry/record.v2.schema.json</h2><pre><code>{
+  &quot;$schema&quot;: &quot;https://json-schema.org/draft/2020-12/schema&quot;,
+  &quot;title&quot;: &quot;Playwright execution telemetry v2&quot;,
+  &quot;type&quot;: &quot;object&quot;,
+  &quot;additionalProperties&quot;: false,
+  &quot;properties&quot;: {
+    &quot;schema_version&quot;: {
+      &quot;const&quot;: 2
+    },
+    &quot;record_type&quot;: {
+      &quot;enum&quot;: [
+        &quot;TEST_ATTEMPT&quot;,
+        &quot;RUN_ERROR&quot;
+      ]
+    },
+    &quot;run_id&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;pattern&quot;: &quot;^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$&quot;
+    },
+    &quot;attempt_id&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;pattern&quot;: &quot;^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$&quot;
+    },
+    &quot;test_id&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;test_name&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;suite_name&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;browser&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;status&quot;: {
+      &quot;enum&quot;: [
+        &quot;PASS&quot;,
+        &quot;FAIL&quot;,
+        &quot;TIMED_OUT&quot;,
+        &quot;SKIPPED&quot;,
+        &quot;INTERRUPTED&quot;
+      ]
+    },
+    &quot;failure_type&quot;: {
+      &quot;enum&quot;: [
+        null,
+        &quot;LOCATOR_NOT_FOUND&quot;,
+        &quot;LOCATOR_AMBIGUOUS&quot;,
+        &quot;ACTIONABILITY_FAILURE&quot;,
+        &quot;ASSERTION_MISMATCH&quot;,
+        &quot;STATE_CONSISTENCY_FAILURE&quot;,
+        &quot;APPLICATION_RUNTIME_ERROR&quot;,
+        &quot;SETUP_ENVIRONMENT_FAILURE&quot;,
+        &quot;UNKNOWN&quot;
+      ]
+    },
+    &quot;duration_ms&quot;: {
+      &quot;type&quot;: &quot;number&quot;,
+      &quot;minimum&quot;: 0
+    },
+    &quot;retry_count&quot;: {
+      &quot;type&quot;: &quot;integer&quot;,
+      &quot;minimum&quot;: 0
+    },
+    &quot;start_time&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;format&quot;: &quot;date-time&quot;
+    },
+    &quot;end_time&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;format&quot;: &quot;date-time&quot;
+    },
+    &quot;app_version&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;test_version&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;trace_path&quot;: {
+      &quot;type&quot;: [
+        &quot;string&quot;,
+        &quot;null&quot;
+      ],
+      &quot;pattern&quot;: &quot;^artifacts/[A-Za-z0-9_./-]+$&quot;
+    },
+    &quot;screenshot_path&quot;: {
+      &quot;type&quot;: [
+        &quot;string&quot;,
+        &quot;null&quot;
+      ],
+      &quot;pattern&quot;: &quot;^artifacts/[A-Za-z0-9_./-]+$&quot;
+    },
+    &quot;notes&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;framework_version&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;playwright_version&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;timestamp&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;format&quot;: &quot;date-time&quot;
+    },
+    &quot;environment&quot;: {
+      &quot;type&quot;: &quot;object&quot;,
+      &quot;additionalProperties&quot;: false,
+      &quot;required&quot;: [
+        &quot;node_version&quot;,
+        &quot;platform&quot;,
+        &quot;architecture&quot;,
+        &quot;os_release&quot;,
+        &quot;hostname&quot;,
+        &quot;ci&quot;,
+        &quot;workers&quot;,
+        &quot;git_commit&quot;
+      ],
+      &quot;properties&quot;: {
+        &quot;node_version&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;minLength&quot;: 1
+        },
+        &quot;platform&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;minLength&quot;: 1
+        },
+        &quot;architecture&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;minLength&quot;: 1
+        },
+        &quot;os_release&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;minLength&quot;: 1
+        },
+        &quot;hostname&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;minLength&quot;: 1
+        },
+        &quot;ci&quot;: {
+          &quot;type&quot;: &quot;boolean&quot;
+        },
+        &quot;workers&quot;: {
+          &quot;type&quot;: &quot;integer&quot;,
+          &quot;minimum&quot;: 0
+        },
+        &quot;git_commit&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;minLength&quot;: 1
+        }
+      }
+    },
+    &quot;locator_mutation&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;fault_variant&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;experiment_id&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;scenario_variant&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;fault_type&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;emulated&quot;: {
+      &quot;type&quot;: &quot;boolean&quot;
+    },
+    &quot;injected_at&quot;: {
+      &quot;type&quot;: [
+        &quot;string&quot;,
+        &quot;null&quot;
+      ],
+      &quot;format&quot;: &quot;date-time&quot;
+    },
+    &quot;mutation_version&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;expected_failure_type&quot;: {
+      &quot;enum&quot;: [
+        null,
+        &quot;LOCATOR_NOT_FOUND&quot;,
+        &quot;LOCATOR_AMBIGUOUS&quot;,
+        &quot;ACTIONABILITY_FAILURE&quot;,
+        &quot;ASSERTION_MISMATCH&quot;,
+        &quot;STATE_CONSISTENCY_FAILURE&quot;,
+        &quot;APPLICATION_RUNTIME_ERROR&quot;,
+        &quot;SETUP_ENVIRONMENT_FAILURE&quot;,
+        &quot;UNKNOWN&quot;
+      ]
+    },
+    &quot;injection_verified&quot;: {
+      &quot;type&quot;: &quot;boolean&quot;
+    },
+    &quot;expected_status&quot;: {
+      &quot;enum&quot;: [
+        &quot;PASS&quot;,
+        &quot;FAIL&quot;,
+        &quot;TIMED_OUT&quot;,
+        &quot;SKIPPED&quot;,
+        &quot;INTERRUPTED&quot;
+      ]
+    },
+    &quot;classification_source&quot;: {
+      &quot;enum&quot;: [
+        &quot;NONE&quot;,
+        &quot;ANNOTATION&quot;,
+        &quot;HEURISTIC&quot;,
+        &quot;UNKNOWN&quot;
+      ]
+    },
+    &quot;failure_phase&quot;: {
+      &quot;enum&quot;: [
+        &quot;test&quot;,
+        &quot;setup&quot;,
+        &quot;teardown&quot;,
+        &quot;run&quot;
+      ]
+    },
+    &quot;error_message&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;error_stack&quot;: {
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;runtime_errors&quot;: {
+      &quot;type&quot;: &quot;array&quot;,
+      &quot;items&quot;: {
+        &quot;type&quot;: &quot;string&quot;
+      }
+    },
+    &quot;project_name&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;minLength&quot;: 1
+    },
+    &quot;worker_index&quot;: {
+      &quot;type&quot;: &quot;integer&quot;,
+      &quot;minimum&quot;: -1
+    },
+    &quot;repeat_index&quot;: {
+      &quot;type&quot;: &quot;integer&quot;,
+      &quot;minimum&quot;: 0
+    }
+  },
+  &quot;required&quot;: [
+    &quot;schema_version&quot;,
+    &quot;record_type&quot;,
+    &quot;run_id&quot;,
+    &quot;attempt_id&quot;,
+    &quot;test_id&quot;,
+    &quot;test_name&quot;,
+    &quot;suite_name&quot;,
+    &quot;browser&quot;,
+    &quot;status&quot;,
+    &quot;failure_type&quot;,
+    &quot;duration_ms&quot;,
+    &quot;retry_count&quot;,
+    &quot;start_time&quot;,
+    &quot;end_time&quot;,
+    &quot;app_version&quot;,
+    &quot;test_version&quot;,
+    &quot;trace_path&quot;,
+    &quot;screenshot_path&quot;,
+    &quot;notes&quot;,
+    &quot;framework_version&quot;,
+    &quot;playwright_version&quot;,
+    &quot;timestamp&quot;,
+    &quot;environment&quot;,
+    &quot;locator_mutation&quot;,
+    &quot;fault_variant&quot;,
+    &quot;experiment_id&quot;,
+    &quot;scenario_variant&quot;,
+    &quot;fault_type&quot;,
+    &quot;emulated&quot;,
+    &quot;injected_at&quot;,
+    &quot;mutation_version&quot;,
+    &quot;expected_failure_type&quot;,
+    &quot;injection_verified&quot;,
+    &quot;expected_status&quot;,
+    &quot;classification_source&quot;,
+    &quot;failure_phase&quot;,
+    &quot;error_message&quot;,
+    &quot;error_stack&quot;,
+    &quot;runtime_errors&quot;,
+    &quot;project_name&quot;,
+    &quot;worker_index&quot;,
+    &quot;repeat_index&quot;
+  ]
+}
+</code></pre>
+<h2 id="automation/telemetry/schema.js">automation/telemetry/schema.js</h2><pre><code>import fs from &#x27;node:fs&#x27;
+import { FAILURE_TYPES } from &#x27;./taxonomy.js&#x27;
+import { HEALING_DEFAULTS, validateHealingFields } from &#x27;../healing/healingHistory.js&#x27;
+
+const text = { type: &#x27;string&#x27; }
+const requiredText = { type: &#x27;string&#x27;, minLength: 1 }
+const date = { type: &#x27;string&#x27;, format: &#x27;date-time&#x27; }
+const uuid = { type: &#x27;string&#x27;, pattern: &#x27;^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$&#x27; }
+const path = { type: [&#x27;string&#x27;, &#x27;null&#x27;], pattern: &#x27;^artifacts/[A-Za-z0-9_./-]+$&#x27; }
+const statuses = [&#x27;PASS&#x27;, &#x27;FAIL&#x27;, &#x27;TIMED_OUT&#x27;, &#x27;SKIPPED&#x27;, &#x27;INTERRUPTED&#x27;]
+export const LEGACY_SCHEMA = JSON.parse(fs.readFileSync(new URL(&#x27;./record.v1.schema.json&#x27;, import.meta.url), &#x27;utf8&#x27;))
+export const V2_SCHEMA = JSON.parse(fs.readFileSync(new URL(&#x27;./record.v2.schema.json&#x27;, import.meta.url), &#x27;utf8&#x27;))
+export const V2_COLUMNS = Object.freeze([...V2_SCHEMA.required])
+export const LEGACY_COLUMNS = Object.freeze([...LEGACY_SCHEMA.required])
+export const EXPERIMENT_DEFAULTS = Object.freeze({
+  fault_type: &#x27;&#x27;, emulated: false, injected_at: null, mutation_version: &#x27;&#x27;,
+  expected_failure_type: null, injection_verified: false,
+})
+
+export const RECORD_SCHEMA = {
+  $schema: &#x27;https://json-schema.org/draft/2020-12/schema&#x27;,
+  title: &#x27;Playwright execution telemetry v3&#x27;,
+  type: &#x27;object&#x27;,
+  additionalProperties: false,
+  properties: {
+    schema_version: { const: 3 },
+    record_type: { enum: [&#x27;TEST_ATTEMPT&#x27;, &#x27;RUN_ERROR&#x27;] },
+    run_id: uuid,
+    attempt_id: uuid,
+    test_id: requiredText,
+    test_name: requiredText,
+    suite_name: requiredText,
+    browser: requiredText,
+    status: { enum: statuses },
+    failure_type: { enum: [null, ...FAILURE_TYPES] },
+    duration_ms: { type: &#x27;number&#x27;, minimum: 0 },
+    retry_count: { type: &#x27;integer&#x27;, minimum: 0 },
+    start_time: date,
+    end_time: date,
+    app_version: requiredText,
+    test_version: requiredText,
+    trace_path: path,
+    screenshot_path: path,
+    notes: text,
+    framework_version: requiredText,
+    playwright_version: requiredText,
+    timestamp: date,
+    environment: {
+      type: &#x27;object&#x27;, additionalProperties: false,
+      required: [&#x27;node_version&#x27;, &#x27;platform&#x27;, &#x27;architecture&#x27;, &#x27;os_release&#x27;, &#x27;hostname&#x27;, &#x27;ci&#x27;, &#x27;workers&#x27;, &#x27;git_commit&#x27;],
+      properties: {
+        node_version: requiredText, platform: requiredText, architecture: requiredText,
+        os_release: requiredText, hostname: requiredText, ci: { type: &#x27;boolean&#x27; },
+        workers: { type: &#x27;integer&#x27;, minimum: 0 }, git_commit: requiredText,
+      },
+    },
+    locator_mutation: text,
+    fault_variant: text,
+    experiment_id: text,
+    scenario_variant: text,
+    fault_type: text,
+    emulated: { type: &#x27;boolean&#x27; },
+    injected_at: { type: [&#x27;string&#x27;, &#x27;null&#x27;], format: &#x27;date-time&#x27; },
+    mutation_version: text,
+    expected_failure_type: { enum: [null, ...FAILURE_TYPES] },
+    injection_verified: { type: &#x27;boolean&#x27; },
+    expected_status: { enum: statuses },
+    classification_source: { enum: [&#x27;NONE&#x27;, &#x27;ANNOTATION&#x27;, &#x27;HEURISTIC&#x27;, &#x27;UNKNOWN&#x27;] },
+    failure_phase: { enum: [&#x27;test&#x27;, &#x27;setup&#x27;, &#x27;teardown&#x27;, &#x27;run&#x27;] },
+    error_message: text,
+    error_stack: text,
+    runtime_errors: { type: &#x27;array&#x27;, items: text },
+    project_name: requiredText,
+    worker_index: { type: &#x27;integer&#x27;, minimum: -1 },
+    repeat_index: { type: &#x27;integer&#x27;, minimum: 0 },
+    healing_mode: { enum: [&#x27;NONE&#x27;, &#x27;BASELINE&#x27;, &#x27;ADAPTIVE&#x27;] },
+    healing_attempted: { type: &#x27;boolean&#x27; },
+    healing_successful: { type: &#x27;boolean&#x27; },
+    original_locator: text,
+    candidate_locator: text,
+    candidate_count: { type: &#x27;integer&#x27;, minimum: 0 },
+    confidence_score: { type: &#x27;number&#x27;, minimum: 0, maximum: 1 },
+    healing_duration_ms: { type: &#x27;number&#x27;, minimum: 0 },
+    healing_reason: text,
+    original_failure_type: { enum: [null, ...FAILURE_TYPES] },
+    healing_events: { type: &#x27;array&#x27;, items: { type: &#x27;object&#x27; } },
+  },
+}
+RECORD_SCHEMA.required = Object.keys(RECORD_SCHEMA.properties)
+export const CSV_COLUMNS = Object.freeze([...RECORD_SCHEMA.required])
+
+function validateValue(value, schema, name) {
+  if (&#x27;const&#x27; in schema &amp;&amp; value !== schema.const) throw new Error(`${name}: invalid constant`)
+  if (schema.enum &amp;&amp; !schema.enum.includes(value)) throw new Error(`${name}: invalid value ${value}`)
+  const types = schema.type ? [].concat(schema.type) : []
+  const type = value === null ? &#x27;null&#x27; : Array.isArray(value) ? &#x27;array&#x27; : typeof value
+  if (types.length &amp;&amp; !types.some(expected =&gt; expected === type || (expected === &#x27;integer&#x27; &amp;&amp; Number.isInteger(value)))) {
+    throw new Error(`${name}: expected ${types.join(&#x27;|&#x27;)}`)
+  }
+  if (typeof value === &#x27;number&#x27; &amp;&amp; (!Number.isFinite(value) || value &lt; (schema.minimum ?? -Infinity) || value &gt; (schema.maximum ?? Infinity))) {
+    throw new Error(`${name}: invalid number`)
+  }
+  if (typeof value === &#x27;string&#x27;) {
+    if (value.length &lt; (schema.minLength ?? 0)) throw new Error(`${name}: empty value`)
+    if (schema.pattern &amp;&amp; !new RegExp(schema.pattern).test(value)) throw new Error(`${name}: invalid format`)
+    if (schema.format === &#x27;date-time&#x27; &amp;&amp; (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value) ||
+        !Number.isFinite(Date.parse(value)) || new Date(value).toISOString() !== value)) {
+      throw new Error(`${name}: expected UTC ISO timestamp`)
+    }
+  }
+  if (Array.isArray(value) &amp;&amp; schema.items) value.forEach((item, index) =&gt; validateValue(item, schema.items, `${name}[${index}]`))
+  if (schema.properties) {
+    for (const key of schema.required) {
+      if (!Object.hasOwn(value, key)) throw new Error(`${name}.${key}: required`)
+      validateValue(value[key], schema.properties[key], `${name}.${key}`)
+    }
+    if (schema.additionalProperties === false &amp;&amp; Object.keys(value).some(key =&gt; !Object.hasOwn(schema.properties, key))) {
+      throw new Error(`${name}: unknown field`)
+    }
+  }
+}
+
+export function validateRecord(record) {
+  validateValue(record, record?.schema_version === 1 ? LEGACY_SCHEMA : record?.schema_version === 2 ? V2_SCHEMA : RECORD_SCHEMA, &#x27;record&#x27;)
+  const successful = [&#x27;PASS&#x27;, &#x27;SKIPPED&#x27;].includes(record.status)
+  if (successful !== (record.failure_type === null)) throw new Error(&#x27;status and failure_type are inconsistent&#x27;)
+  if ((record.failure_type === null) !== (record.classification_source === &#x27;NONE&#x27;)) throw new Error(&#x27;classification_source is inconsistent&#x27;)
+  const elapsed = Date.parse(record.end_time) - Date.parse(record.start_time)
+  if (elapsed &lt; 0 || Math.abs(elapsed - record.duration_ms) &gt; 1) throw new Error(&#x27;duration and timestamps are inconsistent&#x27;)
+  for (const key of [&#x27;trace_path&#x27;, &#x27;screenshot_path&#x27;]) {
+    if (record[key]?.split(&#x27;/&#x27;).includes(&#x27;..&#x27;)) throw new Error(`${key}: unsafe path`)
+  }
+  const environment = record.environment
+  for (const key of [&#x27;node_version&#x27;, &#x27;platform&#x27;, &#x27;architecture&#x27;, &#x27;os_release&#x27;, &#x27;hostname&#x27;]) {
+    if (typeof environment[key] !== &#x27;string&#x27; || !environment[key]) throw new Error(`environment.${key}: required`)
+  }
+  if (record.record_type === &#x27;RUN_ERROR&#x27; &amp;&amp; (record.test_id !== &#x27;__RUN__&#x27; || record.failure_phase !== &#x27;run&#x27;)) {
+    throw new Error(&#x27;RUN_ERROR must use the run-level identity and phase&#x27;)
+  }
+  if (record.schema_version &gt;= 2) {
+    if (record.injection_verified &amp;&amp; (!record.emulated || !record.injected_at || !record.experiment_id || !record.mutation_version)) {
+      throw new Error(&#x27;Verified emulated injections require experiment ID, mutation version, and injection time&#x27;)
+    }
+    if (record.injected_at &amp;&amp; !record.emulated) throw new Error(&#x27;injected_at requires emulated=true&#x27;)
+  }
+  if (record.schema_version === 3) validateHealingFields(record)
+  // Environment and notes must remain serializable and reproducible in CSV.
+  JSON.stringify(record)
+  return record
+}
+
+export function validateHistory(records) {
+  if (!Array.isArray(records)) throw new Error(&#x27;History must be a JSON array&#x27;)
+  const ids = new Set()
+  for (const record of records) {
+    validateRecord(record)
+    if (ids.has(record.attempt_id)) throw new Error(`Duplicate attempt_id: ${record.attempt_id}`)
+    ids.add(record.attempt_id)
+  }
+  return records
+}
+
+export function upgradeRecord(record) {
+  validateRecord(record)
+  return record.schema_version === 3 ? record : validateRecord({ ...record, ...(record.schema_version === 1 ? EXPERIMENT_DEFAULTS : {}), ...HEALING_DEFAULTS, healing_events: [], schema_version: 3 })
+}
+</code></pre>
+<h2 id="automation/telemetry/telemetry.test.js">automation/telemetry/telemetry.test.js</h2><pre><code>import test from &#x27;node:test&#x27;
+import { HEALING_DEFAULTS } from &#x27;../healing/healingHistory.js&#x27;
+import assert from &#x27;node:assert/strict&#x27;
+import fs from &#x27;node:fs&#x27;
+import os from &#x27;node:os&#x27;
+import path from &#x27;node:path&#x27;
+import { randomUUID } from &#x27;node:crypto&#x27;
+import { execFile } from &#x27;node:child_process&#x27;
+import { promisify } from &#x27;node:util&#x27;
+import { fileURLToPath } from &#x27;node:url&#x27;
+import TelemetryReporter from &#x27;./TelemetryReporter.js&#x27;
+import { RECORD_SCHEMA, CSV_COLUMNS, validateRecord } from &#x27;./schema.js&#x27;
+import { FAILURE_TYPES, classifyFailure } from &#x27;./taxonomy.js&#x27;
+import { HistoryStore, atomicWrite, serializeCSV } from &#x27;./history.js&#x27;
+import { createRunMetadata, testIdentity, experimentMetadata } from &#x27;./metadata.js&#x27;
+
+const metadata = createRunMetadata({ workers: 2 })
+function record(overrides = {}) {
+  return {
+    schema_version: 3, ...HEALING_DEFAULTS, healing_events: [], record_type: &#x27;TEST_ATTEMPT&#x27;, ...metadata,
+    attempt_id: randomUUID(), test_id: &#x27;TEST-001&#x27;, test_name: &#x27;TEST-001 sample&#x27;, suite_name: &#x27;Telemetry&#x27;, browser: &#x27;chromium&#x27;,
+    status: &#x27;PASS&#x27;, failure_type: null, duration_ms: 5, retry_count: 0,
+    start_time: &#x27;2026-10-19T10:00:00.000Z&#x27;, end_time: &#x27;2026-10-19T10:00:00.005Z&#x27;,
+    trace_path: null, screenshot_path: null, notes: &#x27;&#x27;,
+    ...experimentMetadata(),
+    expected_status: &#x27;PASS&#x27;, classification_source: &#x27;NONE&#x27;, failure_phase: &#x27;test&#x27;, error_message: &#x27;&#x27;, error_stack: &#x27;&#x27;,
+    runtime_errors: [], project_name: &#x27;chromium&#x27;, worker_index: 0, repeat_index: 0,
+    ...overrides,
+  }
+}
+function temporary(t) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), &#x27;sut-telemetry-&#x27;))
+  t.after(() =&gt; fs.rmSync(directory, { recursive: true, force: true }))
+  return directory
+}
+function fakeTest(title = &#x27;TEST-001 sample&#x27;) {
+  return {
+    title, annotations: [], expectedStatus: &#x27;passed&#x27;, repeatEachIndex: 0,
+    location: { file: fileURLToPath(new URL(&#x27;../tests/login.spec.js&#x27;, import.meta.url)), line: 1 },
+    parent: { title: &#x27;Demo&#x27;, type: &#x27;describe&#x27;, project: () =&gt; ({ name: &#x27;chromium&#x27;, use: { browserName: &#x27;chromium&#x27; } }) },
+  }
+}
+function fakeResult(overrides = {}) {
+  return { startTime: new Date(&#x27;2026-10-19T10:00:00.000Z&#x27;), duration: 5, retry: 0, status: &#x27;passed&#x27;,
+    errors: [], attachments: [], workerIndex: 0, ...overrides }
+}
+function begin(reporter, candidate = fakeTest()) {
+  reporter.onBegin({ workers: 2 }, { allTests: () =&gt; [candidate] })
+  return candidate
+}
+
+// This parser is a test oracle for CSV quoting, not part of production ingestion.
+function parseCSV(text) {
+  const rows = []; let row = []; let cell = &#x27;&#x27;; let quoted = false
+  for (let i = 0; i &lt; text.length; i++) {
+    const character = text[i]
+    if (character === &#x27;&quot;&#x27;) {
+      if (quoted &amp;&amp; text[i + 1] === &#x27;&quot;&#x27;) { cell += &#x27;&quot;&#x27;; i++ }
+      else quoted = !quoted
+    } else if (!quoted &amp;&amp; character === &#x27;,&#x27;) { row.push(cell); cell = &#x27;&#x27; }
+    else if (!quoted &amp;&amp; character === &#x27;\r&#x27; &amp;&amp; text[i + 1] === &#x27;\n&#x27;) {
+      row.push(cell); rows.push(row); row = []; cell = &#x27;&#x27;; i++
+    } else cell += character
+  }
+  return rows
+}
+
+test(&#x27;schema JSON and runtime validator describe the same canonical record&#x27;, () =&gt; {
+  const saved = JSON.parse(fs.readFileSync(new URL(&#x27;./record.schema.json&#x27;, import.meta.url)))
+  assert.deepEqual(saved, RECORD_SCHEMA)
+  assert.equal(validateRecord(record()).failure_type, null)
+})
+
+test(&#x27;all canonical fields are mandatory, including empty experiment fields&#x27;, () =&gt; {
+  for (const key of CSV_COLUMNS) {
+    const row = record(); delete row[key]
+    assert.throws(() =&gt; validateRecord(row), undefined, key)
+  }
+})
+
+test(&#x27;schema rejects invalid types, statuses, chronology, paths, and unknown fields&#x27;, () =&gt; {
+  for (const changes of [
+    { duration_ms: -1 }, { duration_ms: NaN }, { retry_count: 1.5 }, { status: &#x27;GREEN&#x27; },
+    { failure_type: &#x27;NONE&#x27; }, { failure_type: &#x27;LOCATOR_NOT_FOUND&#x27; },
+    { end_time: &#x27;2026-10-19T09:00:00.000Z&#x27; }, { duration_ms: 500 },
+    { start_time: &#x27;2026-02-30T10:00:00.000Z&#x27; },
+    { screenshot_path: &#x27;artifacts/../../outside.png&#x27; }, { trace_path: &#x27;/absolute/trace.zip&#x27; },
+    { extra: true }, { environment: {} }, { attempt_id: &#x27;&#x27; },
+  ]) assert.throws(() =&gt; validateRecord(record(changes)))
+})
+
+test(&#x27;taxonomy is frozen and passing business validations have no failure type&#x27;, () =&gt; {
+  assert.ok(Object.isFrozen(FAILURE_TYPES))
+  assert.equal(FAILURE_TYPES.length, 8)
+  assert.deepEqual(classifyFailure({ status: &#x27;PASS&#x27;, errors: [{ message: &#x27;Invalid coupon code.&#x27; }] }), { type: null, source: &#x27;NONE&#x27; })
+})
+
+for (const [type, options] of [
+  [&#x27;LOCATOR_AMBIGUOUS&#x27;, { errors: [{ message: &#x27;strict mode violation: resolved to 2 elements&#x27; }] }],
+  [&#x27;LOCATOR_NOT_FOUND&#x27;, { errors: [{ message: &#x27;locator.click: Timeout 100ms exceeded.\nCall log:\n - waiting for getByRole(\&#x27;button\&#x27;)&#x27; }] }],
+  [&#x27;ACTIONABILITY_FAILURE&#x27;, { errors: [{ message: &#x27;element is not visible&#x27; }] }],
+  [&#x27;ASSERTION_MISMATCH&#x27;, { errors: [{ message: &#x27;expect(locator).toHaveText(expected) failed&#x27; }] }],
+  [&#x27;APPLICATION_RUNTIME_ERROR&#x27;, { runtimeErrors: [&#x27;TypeError: render failed&#x27;] }],
+  [&#x27;SETUP_ENVIRONMENT_FAILURE&#x27;, { phase: &#x27;setup&#x27;, errors: [{ message: &#x27;beforeEach failed&#x27; }] }],
+  [&#x27;STATE_CONSISTENCY_FAILURE&#x27;, { annotation: &#x27;STATE_CONSISTENCY_FAILURE&#x27; }],
+  [&#x27;UNKNOWN&#x27;, { errors: [{ message: &#x27;Timeout with insufficient evidence&#x27; }] }],
+]) {
+  test(`classification supports ${type} without conflating it with status`, () =&gt; {
+    assert.equal(classifyFailure({ status: &#x27;FAIL&#x27;, ...options }).type, type)
+  })
+}
+
+test(&#x27;assertion timeout is not automatically a missing locator&#x27;, () =&gt; {
+  assert.equal(classifyFailure({ status: &#x27;TIMED_OUT&#x27;, category: &#x27;expect&#x27;, errors: [{ message: &#x27;waiting for getByRole&#x27; }] }).type, &#x27;ASSERTION_MISMATCH&#x27;)
+})
+
+test(&#x27;stable explicit test identity survives title changes&#x27;, () =&gt; {
+  assert.equal(testIdentity(fakeTest(&#x27;TEST-001 renamed description&#x27;)), &#x27;TEST-001&#x27;)
+  const fallback = fakeTest(&#x27;unnumbered description&#x27;)
+  assert.equal(testIdentity(fallback), testIdentity(fallback))
+})
+
+test(&#x27;experiment annotations override run environment defaults&#x27;, () =&gt; {
+  assert.equal(experimentMetadata([{ type: &#x27;experiment_id&#x27;, description: &#x27;study-001&#x27; }]).experiment_id, &#x27;study-001&#x27;)
+})
+
+test(&#x27;append preserves earlier attempts and JSON/CSV agree including quoted multiline text&#x27;, t =&gt; {
+  const store = new HistoryStore(temporary(t))
+  const first = record({ notes: &#x27;comma, quote &quot; and\nnew line&#x27; })
+  const second = record({ test_id: &#x27;TEST-002&#x27;, test_name: &#x27;Second&#x27; })
+  store.append(first); store.append(second)
+  assert.deepEqual(store.validate(), [first, second])
+  const parsed = parseCSV(fs.readFileSync(store.csv, &#x27;utf8&#x27;))
+  assert.deepEqual(parsed[0], CSV_COLUMNS)
+  assert.equal(parsed.length, 3)
+  for (const [index, row] of [first, second].entries()) {
+    assert.deepEqual(parsed[index + 1], CSV_COLUMNS.map(key =&gt; row[key] === null ? &#x27;&#x27; : typeof row[key] === &#x27;object&#x27; ? JSON.stringify(row[key]) : String(row[key])))
+  }
+})
+
+test(&#x27;invalid records leave both historical outputs untouched&#x27;, t =&gt; {
+  const store = new HistoryStore(temporary(t))
+  store.append(record())
+  const before = [fs.readFileSync(store.json, &#x27;utf8&#x27;), fs.readFileSync(store.csv, &#x27;utf8&#x27;)]
+  assert.throws(() =&gt; store.append(record({ test_name: &#x27;&#x27; })))
+  assert.deepEqual([fs.readFileSync(store.json, &#x27;utf8&#x27;), fs.readFileSync(store.csv, &#x27;utf8&#x27;)], before)
+})
+
+test(&#x27;duplicate delivery is idempotent and conflicting duplicate IDs are rejected&#x27;, t =&gt; {
+  const store = new HistoryStore(temporary(t)); const row = record()
+  assert.equal(store.append(row), true)
+  assert.equal(store.append(row), false)
+  assert.throws(() =&gt; store.append({ ...row, notes: &#x27;changed&#x27; }), /Conflicting duplicate/)
+  assert.equal(store.validate().length, 1)
+})
+
+test(&#x27;write-ahead journal recovers an interrupted JSON/CSV publication&#x27;, t =&gt; {
+  const store = new HistoryStore(temporary(t)); const first = record(); const second = record()
+  store.append(first)
+  atomicWrite(store.pending, JSON.stringify([first, second]))
+  fs.writeFileSync(store.csv, &#x27;interrupted publication&#x27;)
+  assert.deepEqual(store.validate(), [first, second])
+  assert.equal(fs.readFileSync(store.csv, &#x27;utf8&#x27;), serializeCSV([first, second]))
+  assert.equal(fs.existsSync(store.pending), false)
+})
+
+test(&#x27;unexplained corruption is rejected rather than silently erasing history&#x27;, t =&gt; {
+  const store = new HistoryStore(temporary(t)); store.append(record())
+  fs.writeFileSync(store.csv, &#x27;corrupted&#x27;)
+  assert.throws(() =&gt; store.validate(), /inconsistent/)
+  assert.throws(() =&gt; store.append(record()), /inconsistent/)
+  assert.equal(JSON.parse(fs.readFileSync(store.json)).length, 1)
+})
+
+test(&#x27;concurrent reporter processes append without losing rows&#x27;, async t =&gt; {
+  const directory = temporary(t)
+  const module = new URL(&#x27;./history.js&#x27;, import.meta.url).href
+  const code = `import { HistoryStore } from ${JSON.stringify(module)}; new HistoryStore(process.argv[1]).append(JSON.parse(process.argv[2]));`
+  await Promise.all(Array.from({ length: 5 }, () =&gt; promisify(execFile)(process.execPath, [&#x27;--input-type=module&#x27;, &#x27;-e&#x27;, code, directory, JSON.stringify(record())])))
+  assert.equal(new HistoryStore(directory).validate().length, 5)
+})
+
+test(&#x27;reporter keeps first failure and successful retry as separate attempts&#x27;, async t =&gt; {
+  const reporter = new TelemetryReporter({ directory: temporary(t) })
+  const candidate = begin(reporter)
+  const failure = fakeResult({ status: &#x27;failed&#x27;, errors: [{ message: &#x27;expect(locator).toHaveText(expected) failed&#x27; }] })
+  reporter.onTestBegin(candidate, failure); reporter.onTestEnd(candidate, failure)
+  const success = fakeResult({ retry: 1 })
+  reporter.onTestBegin(candidate, success); reporter.onTestEnd(candidate, success)
+  assert.equal(await reporter.onEnd({ status: &#x27;passed&#x27; }), undefined)
+  const rows = reporter.store.validate()
+  assert.deepEqual(rows.map(row =&gt; row.status), [&#x27;FAIL&#x27;, &#x27;PASS&#x27;])
+  assert.deepEqual(rows.map(row =&gt; row.retry_count), [0, 1])
+  assert.notEqual(rows[0].attempt_id, rows[1].attempt_id)
+  assert.equal(rows[0].run_id, rows[1].run_id)
+  assert.equal(rows[0].test_id, rows[1].test_id)
+  assert.equal(rows[1].failure_type, null)
+})
+
+test(&#x27;failure artifacts are copied to durable storage outside Playwright output&#x27;, async t =&gt; {
+  const directory = temporary(t); const reporter = new TelemetryReporter({ directory })
+  const candidate = begin(reporter)
+  const source = path.join(directory, &#x27;temporary-source.png&#x27;); fs.writeFileSync(source, &#x27;image-test-data&#x27;)
+  const result = fakeResult({ status: &#x27;failed&#x27;, errors: [{ message: &#x27;no element matches selector&#x27; }], attachments: [
+    { name: &#x27;screenshot&#x27;, contentType: &#x27;image/png&#x27;, path: source },
+    { name: &#x27;trace&#x27;, contentType: &#x27;application/zip&#x27;, body: Buffer.from(&#x27;trace-test-data&#x27;) },
+  ] })
+  reporter.onTestEnd(candidate, result)
+  assert.equal(await reporter.onEnd({ status: &#x27;failed&#x27; }), undefined)
+  fs.unlinkSync(source)
+  const [row] = reporter.store.validate()
+  assert.equal(fs.readFileSync(path.join(directory, row.screenshot_path), &#x27;utf8&#x27;), &#x27;image-test-data&#x27;)
+  assert.equal(fs.readFileSync(path.join(directory, row.trace_path), &#x27;utf8&#x27;), &#x27;trace-test-data&#x27;)
+})
+
+test(&#x27;runtime errors are retained without relabeling a passing test as failed&#x27;, async t =&gt; {
+  const reporter = new TelemetryReporter({ directory: temporary(t) }); const candidate = begin(reporter)
+  reporter.onTestEnd(candidate, fakeResult({ attachments: [{ name: &#x27;telemetry-runtime-errors&#x27;, body: Buffer.from(&#x27;[&quot;TypeError: observed&quot;]&#x27;) }] }))
+  await reporter.onEnd({ status: &#x27;passed&#x27; })
+  const [row] = reporter.store.validate()
+  assert.equal(row.status, &#x27;PASS&#x27;); assert.equal(row.failure_type, null)
+  assert.deepEqual(row.runtime_errors, [&#x27;TypeError: observed&#x27;])
+})
+
+test(&#x27;runner errors use a distinct record type instead of inventing failed tests&#x27;, async t =&gt; {
+  const reporter = new TelemetryReporter({ directory: temporary(t) })
+  reporter.onError({ message: &#x27;Web server failed to start&#x27; })
+  await reporter.onEnd({ status: &#x27;failed&#x27; })
+  const [row] = reporter.store.validate()
+  assert.equal(row.record_type, &#x27;RUN_ERROR&#x27;); assert.equal(row.test_id, &#x27;__RUN__&#x27;)
+  assert.equal(row.failure_type, &#x27;SETUP_ENVIRONMENT_FAILURE&#x27;)
+})
+
+test(&#x27;telemetry errors explicitly fail the run instead of being swallowed by Playwright&#x27;, async t =&gt; {
+  const reporter = new TelemetryReporter({ directory: temporary(t) }); const candidate = begin(reporter)
+  reporter.onTestEnd(candidate, fakeResult({ duration: -1 }))
+  assert.deepEqual(await reporter.onEnd({ status: &#x27;passed&#x27; }), { status: &#x27;failed&#x27; })
+  assert.equal(JSON.parse(fs.readFileSync(reporter.manifest)).status, &#x27;TELEMETRY_ERROR&#x27;)
+})
+</code></pre>
+<h2 id="dataset/.gitignore">dataset/.gitignore</h2><pre><code>execution-history.json
+test-history.csv
+.history-*
+artifacts/
+runs/
+*.tmp
+migrations/
+campaigns/
+
+intelligence/
+
+healing-history.json
+healing-history.csv
+healing-evaluations/
+</code></pre>
+</html>

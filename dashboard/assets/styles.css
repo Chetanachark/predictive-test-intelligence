@@ -1,0 +1,8 @@
+.block-container { max-width: 1500px; padding-top: 4rem; padding-bottom: 3rem; }
+.research-eyebrow { color: #087f8c; font-size: .78rem; font-weight: 700; letter-spacing: .16em; }
+.research-flow { padding: .8rem 1rem; background: #edf6f7; border-left: 4px solid #087f8c; border-radius: 6px; margin: 1rem 0; color: #29465e; }
+[data-testid="stMetric"] { border: 1px solid #dce5ec; border-top: 3px solid #087f8c; border-radius: 9px; padding: 1rem; background: white; }
+[data-testid="stMetricValue"] { font-size: 1.8rem; }
+[data-testid="stTabs"] button { font-weight: 600; }
+
+h1, h2, h3 { scroll-margin-top: 80px; }

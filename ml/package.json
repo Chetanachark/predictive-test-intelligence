@@ -1,0 +1,10 @@
+{
+  "name": "predictive-test-ml",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "node datasetBuilder.js",
+    "test": "node --test datasetBuilder.test.js"
+  }
+}

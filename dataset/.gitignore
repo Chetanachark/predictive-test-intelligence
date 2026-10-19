@@ -6,3 +6,15 @@ runs/
 *.tmp
 migrations/
 campaigns/
+
+intelligence/
+
+healing-history.json
+healing-history.csv
+healing-evaluations/
+
+knowledge-base.json
+knowledge-base.json.lock/
+adaptive-evaluations/
+
+progression-campaigns/
