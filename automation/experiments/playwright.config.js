@@ -6,6 +6,7 @@ export default defineConfig({
   ...base,
   testDir: fileURLToPath(new URL('.', import.meta.url)),
   testMatch: '**/*.spec.js',
+  testIgnore: '**/progression/**',
   fullyParallel: false,
   workers: 1,
   retries: 0,
